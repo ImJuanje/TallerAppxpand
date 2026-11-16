@@ -48,6 +48,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1p
 .mec-f{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
 .cod{font:700 1.8rem "Barlow Semi Condensed",monospace;letter-spacing:.2em;margin:14px 0 4px;word-break:break-all}
 .chip{font-size:.75rem;font-weight:600;padding:2px 8px;border-radius:10px;background:#e3e8f1;color:var(--mute)}.chip.pendiente{background:#dbe6ff;color:#1c4fd8}.chip.usada{background:#d9f2e4;color:var(--ok)}
+.bdg{display:inline-block;min-width:18px;padding:0 6px;border-radius:9px;background:#e5484d;color:#fff;font-size:.75rem;font-weight:700;text-align:center}.vbp{color:#b45309;font-weight:600}
 </style></head>
 <body>
 <header class="top"><span class="brand">Taller <b>AppXpand</b></span><nav id="nav"></nav>
@@ -72,11 +73,14 @@ const mots=o=>[...o.mot,...(o.otro?[o.otro]:[])].join(", ");
 const eur=x=>x.toLocaleString("es-ES",{style:"currency",currency:"EUR"}),tot=o=>o.pres.reduce((s,l)=>s+ +l.i,0);
 let vista="tablero",F="*",cur=null,fotoTmp="";
 const ir=v=>{vista=v;pintar()};
-const NAVS=[["tablero","Tablero"],["entrada","Nueva entrada"],["equipo","Equipo"],["ajustes","Ajustes"]];
-function pintar(){$("#nav").innerHTML=NAVS.map(([k,t])=>`<button class="${vista==k?"on":""}" onclick="ir('${k}')">${t}</button>`).join("");({tablero,entrada,equipo,ajustes})[vista]()}
+const NAVS=[["tablero","Tablero"],["aprobar","Por aprobar"],["entrada","Nueva entrada"],["equipo","Equipo"],["ajustes","Ajustes"]];
+const pend=()=>D.ordenes.filter(o=>o.vb==="pendiente"&&o.estado!=="Entregado");
+function nav(){const n=pend().length;document.title=(n?`(${n}) `:"")+"Panel · Taller AppXpand";
+ $("#nav").innerHTML=NAVS.map(([k,t])=>`<button class="${vista==k?"on":""}" onclick="ir('${k}')">${t}${k=="aprobar"&&n?` <span class="bdg">${n}</span>`:""}</button>`).join("")}
+function pintar(){nav();({tablero,aprobar,entrada,equipo,ajustes})[vista]()}
 
 /* 1. TABLERO */
-const tarjeta=o=>`<article class="tj" draggable="true" ondragstart="event.dataTransfer.setData('t','${o.id}')" onclick="abrir('${o.id}')">${o.foto?`<img src="${src(o.foto)}" alt="">`:`<div class="sf">Sin foto</div>`}<div><span class="mat">${esc(o.mat)}</span><div>${esc(o.marca)} ${esc(o.modelo)}</div><small>${esc(mots(o))}</small>${adm()?`<small class="mec">${esc(nom(o.mec))}</small>`:""}</div></article>`;
+const tarjeta=o=>`<article class="tj" draggable="true" ondragstart="event.dataTransfer.setData('t','${o.id}')" onclick="abrir('${o.id}')">${o.foto?`<img src="${src(o.foto)}" alt="">`:`<div class="sf">Sin foto</div>`}<div><span class="mat">${esc(o.mat)}</span><div>${esc(o.marca)} ${esc(o.modelo)}</div><small>${esc(mots(o))}</small>${o.vb=="pendiente"?'<small class="vbp">Pendiente de visto bueno</small>':""}${adm()?`<small class="mec">${esc(nom(o.mec))}</small>`:""}</div></article>`;
 function tablero(){let os=vis();if(adm()&&F!="*")os=os.filter(o=>F=="-"?!o.mec:o.mec==F);
  $("#v").innerHTML=(adm()?`<div class="bar"><label style="display:inline;font-weight:600">Mostrar<select onchange="F=this.value;tablero()" style="width:auto"><option value="*">Todos</option><option value="-" ${F=="-"?"selected":""}>Sin asignar</option>${D.equipo.map(u=>`<option value="${u.u}" ${F==u.u?"selected":""}>${esc(u.n)}</option>`).join("")}</select></label></div>`:"")
  +`<div class="board">`+ESTADOS.map(e=>{const l=os.filter(o=>o.estado==e);return `<section class="col" ondragover="event.preventDefault()" ondrop="mover(event,'${e}')"><h2>${e}<span>${l.length}</span></h2>${e=="Entregado"?'<p class="vac">Suelta aquí el coche al entregarlo. Sale del tablero y queda en su historial.</p>':l.map(tarjeta).join("")||'<p class="vac">Sin vehículos</p>'}</section>`}).join("")+`</div>`}
@@ -123,6 +127,14 @@ async function fotos(i){for(const f of i.files){try{cur.fotos.push(await subir(a
 function linea(){const c=$("#p-c").value.trim(),i=$("#p-i").value;if(!c||i==="")return;cur.pres.push({c,t:$("#p-t").value,i:+i});cur.vb="";save(cur,["pres","vb"]);ficha()}
 function quitar(i){cur.pres.splice(i,1);cur.vb="";save(cur,["pres","vb"]);ficha()}
 function setVB(v){cur.vb=v;save(cur,["vb"]);ficha()}
+/* 7. POR APROBAR */
+function aprobar(){const l=pend();
+ $("#v").innerHTML=`<div class="card"><h1>Presupuestos por aprobar</h1><p class="mute" style="margin:6px 0 0">Los que los mecánicos han enviado a tu visto bueno.</p></div>`+(l.length?l.map(o=>`<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><span class="mat">${esc(o.mat)}</span> <b>${esc(o.marca)} ${esc(o.modelo)}</b><div class="mute">${esc(nom(o.mec))} · ${esc(mots(o))}</div></div><div style="text-align:right"><b>${eur(tot(o)*1.21)}</b><div class="mute">IVA incluido</div></div></div>
+ <table style="margin-top:8px">${o.pres.map(x=>`<tr><td>${esc(x.c)}</td><td>${esc(x.t)}</td><td>${eur(+x.i)}</td></tr>`).join("")}</table>
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" onclick="decidir('${o.id}','ok')">Dar visto bueno</button><button class="btn sec" onclick="decidir('${o.id}','')">Devolver al mecánico</button><button class="btn sec" onclick="abrir('${o.id}')">Ver ficha</button></div></div>`).join(""):`<div class="card" style="margin-top:14px"><p class="mute" style="margin:0">No hay presupuestos pendientes.</p></div>`)}
+async function decidir(id,v){const o=D.ordenes.find(x=>x.id==id);if(!o)return;const ant=o.vb;o.vb=v;
+ if(API)try{await api("ordenes/"+id,"PUT",{vb:v})}catch(x){o.vb=ant;alert("No se ha podido guardar: "+x.message)}
+ pintar()}
 $("#fd").addEventListener("close",pintar);
 /* API (si no hay servidor, la página sigue en modo demostración) */
 let EQ=[],API=false;
@@ -167,4 +179,5 @@ async function setVBGlobal(v){D.vb=v;await guardarAj()}
 async function addMot(){const m=$("#m-nuevo").value.trim();if(!m)return;D.motivos.push(m);await guardarAj();ajustes()}
 async function quitarMot(i){D.motivos.splice(i,1);await guardarAj();ajustes()}
 cargar().then(pintar);
+setInterval(async()=>{if(!API||document.hidden||$("#fd").open)return;try{D.ordenes=await api("ordenes");["tablero","aprobar"].includes(vista)?pintar():nav()}catch(x){}},30000);
 </script></body></html>
