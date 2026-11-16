@@ -33,8 +33,26 @@ const handler = async (req) => {
     }
     if (p[2] === "codigo" && req.method === "POST") {
       const codigo = nuevoCodigo();
-      await g.put("codigo/" + sha(codigo), { taller: "main", rol: "mecanico", nombre: String(body.nombre || "").trim(), exp: Date.now() + 7 * 864e5 });
+      await g.put("codigo/" + sha(codigo), { taller: "main", rol: "mecanico", nombre: String(body.nombre || "").trim(), creado: Date.now(), exp: Date.now() + 7 * 864e5 });
       return json({ codigo });
+    }
+    if (p[2] === "invitaciones") {
+      if (req.method === "GET" && !p[3]) {
+        const ahora = Date.now();
+        const cs = (await Promise.all((await g.list("codigo/")).map(async (k) => { const c = await g.get(k); return c && c.taller === "main" ? { id: k.slice(7), ...c } : null; }))).filter(Boolean);
+        return json(cs.map((c) => ({ id: c.id, nombre: c.nombre || "", estado: c.usado ? "usada" : c.exp < ahora ? "caducada" : "pendiente",
+          creado: c.creado || c.exp - 7 * 864e5, exp: c.exp, usuario: c.usuario || "" })).sort((a, b) => b.creado - a.creado).slice(0, 50));
+      }
+      if (req.method === "POST" && /^[a-f0-9]{64}$/.test(p[3] || "") && ["anular", "regenerar"].includes(p[4])) {
+        const k = "codigo/" + p[3], c = await g.get(k);
+        if (!c || c.taller !== "main") return json({ error: "No existe" }, 404);
+        if (c.usado) return json({ error: "Esa invitación ya se usó" }, 409);
+        await g.del(k);
+        if (p[4] === "anular") return json({ ok: true });
+        const codigo = nuevoCodigo();
+        await g.put("codigo/" + sha(codigo), { taller: "main", rol: "mecanico", nombre: c.nombre || "", creado: Date.now(), exp: Date.now() + 7 * 864e5 });
+        return json({ codigo });
+      }
     }
     if (p[2] && req.method === "PATCH") {
       const u = await t.get("usuarios/" + p[2]);

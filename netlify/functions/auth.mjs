@@ -53,12 +53,12 @@ const handler = async (req) => {
       return json({ error: "Ese usuario no está disponible" }, 409);
     const ck = "codigo/" + sha(String(body.codigo || "").trim().toUpperCase());
     const c = await g.get(ck);
-    if (!c || c.exp < Date.now()) return json({ error: "Código no válido o caducado" }, 400);
+    if (!c || c.usado || c.exp < Date.now()) return json({ error: "Código no válido o caducado" }, 400);
     // Se crea el usuario de forma atómica: si ya existe, no se pisa
     const creado = await T("main").putNew("usuarios/" + usuario, { usuario, nombre: c.nombre, rol: "mecanico", activo: true, libre: false, pass: hashPass(String(body.password)) });
     if (!creado) return json({ error: "Ese usuario ya existe" }, 409);
     await g.put("login/" + usuario, { taller: "main" }); // índice (ya no es necesario para entrar)
-    await g.del(ck); // el código se usa una sola vez
+    await g.put(ck, { ...c, usado: Date.now(), usuario }); // se usa una sola vez; queda registrado como usada
     return json({ ok: true });
   }
   return json({ error: "No encontrado" }, 404);
