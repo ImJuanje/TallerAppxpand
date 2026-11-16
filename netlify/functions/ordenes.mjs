@@ -74,9 +74,12 @@ export default async (req) => {
     if (!o) return json({ error: "No existe" }, 404);
     if (!adm && o.mec !== ses.usuario) return json({ error: "No autorizado" }, 403);
     const c = limpia(body, adm ? ["estado", "mec", "notas", "pres", "vb", "fotos"] : ["estado", "notas", "pres", "vb", "fotos"]);
-    if (!adm && c.vb === "ok" && o.vb !== "ok") { // sin permiso, el mecánico solo puede pedir visto bueno
+    if (!adm) { // sin permiso, el mecánico no puede cerrar ni dejar aprobado un presupuesto por su cuenta
       const aj = { vistoBuenoActivo: false, ...(await t.get("ajustes")) }, u = await t.get("usuarios/" + ses.usuario);
-      if (aj.vistoBuenoActivo && !u?.libre) c.vb = "pendiente";
+      if (aj.vistoBuenoActivo && !u?.libre) {
+        const cambiaPres = c.pres && JSON.stringify(c.pres) !== JSON.stringify(o.pres);
+        if (cambiaPres || (c.vb === "ok" && o.vb !== "ok")) c.vb = c.vb === "ok" || c.vb === "pendiente" ? "pendiente" : "";
+      }
     }
     Object.assign(o, c);
     await t.put("ordenes/" + o.id, o);
