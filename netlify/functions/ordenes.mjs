@@ -32,6 +32,18 @@ export default async (req) => {
     const u = await t.get("usuarios/" + ses.usuario);
     if (!u || u.activo === false) return json({ error: "No autorizado" }, 403);
   }
+  // El mecánico solo ve fotos que subió él o que pertenecen a una orden asignada a él
+  const puedeVer = async (id) => {
+    const m = await t.get("fotosmeta/" + id);
+    if (m?.por === ses.usuario) return true;
+    const tiene = (o) => o && o.mec === ses.usuario && (o.foto === id || (o.fotos || []).includes(id));
+    if (m?.orden && tiene(await t.get("ordenes/" + m.orden))) return true;
+    // foto antigua o aún sin enlazar: se busca entre sus órdenes y se recuerda
+    const mias = (await Promise.all((await t.list("ordenes/")).map((k) => t.get(k)))).filter(tiene);
+    if (!mias.length) return false;
+    await t.put("fotosmeta/" + id, { por: m?.por || "", orden: mias[0].id });
+    return true;
+  };
   const body = ["POST", "PUT"].includes(req.method) ? await req.json().catch(() => ({})) : {};
 
   if (p[1] === "fotos") {
@@ -40,10 +52,12 @@ export default async (req) => {
       if (!d.startsWith(pre) || d.length > 1.6e6) return json({ error: "Foto no válida o demasiado grande" }, 400);
       const id = nuevoId();
       await t.put("fotos/" + id, { d: d.slice(pre.length) });
+      await t.put("fotosmeta/" + id, { por: ses.usuario, orden: "" }); // quién la subió y a qué orden pertenece
       return json({ id });
     }
     const f = ID.test(p[2] || "") && (await t.get("fotos/" + p[2]));
     if (!f) return json({ error: "No existe" }, 404);
+    if (!adm && !(await puedeVer(p[2]))) return json({ error: "No autorizado" }, 403);
     return new Response(Buffer.from(f.d, "base64"), { headers: { "content-type": "image/jpeg", "cache-control": "private, max-age=86400" } });
   }
 
@@ -55,14 +69,15 @@ export default async (req) => {
       return json(o ? { marca: o.marca, modelo: o.modelo, anio: o.anio, cli: o.cli, tel: o.tel } : {});
     }
     if (adm) return json(todas);
-    // Mecánico: sus vehículos y el historial de esas mismas matrículas
-    const mats = new Set(todas.filter((o) => o.mec === ses.usuario).map((o) => o.mat));
-    return json(todas.filter((o) => o.mec === ses.usuario || mats.has(o.mat)));
+    // Mecánico: solo las matrículas que tiene ahora en su tablero (sin entregar) y el historial de esas matrículas
+    const mats = new Set(todas.filter((o) => o.mec === ses.usuario && o.estado !== "Entregado").map((o) => o.mat));
+    return json(todas.filter((o) => mats.has(o.mat)));
   }
   if (req.method === "POST" && !p[2]) {
     // El mecánico solo da de alta el vehículo, y queda asignado a él
     const datos = adm ? body : { ...body, mec: ses.usuario };
     const o = { estado: "Recibido", mec: "", notas: "", fotos: [], pres: [], vb: "", foto: "", otro: "", mot: [], ...limpia(datos, adm ? undefined : ALTA) };
+    if (!adm && o.foto && (await t.get("fotosmeta/" + o.foto))?.por !== ses.usuario) o.foto = ""; // no puede usar fotos ajenas
     if (!o.mat || !o.marca || (!o.mot.length && !o.otro)) return json({ error: "Faltan datos de la entrada" }, 400);
     o.id = nuevoId(); o.creado = Date.now();
     o.fecha = new Date().toLocaleDateString("es-ES", { timeZone: "Europe/Madrid" });
@@ -74,6 +89,10 @@ export default async (req) => {
     if (!o) return json({ error: "No existe" }, 404);
     if (!adm && o.mec !== ses.usuario) return json({ error: "No autorizado" }, 403);
     const c = limpia(body, adm ? ["estado", "mec", "notas", "pres", "vb", "fotos"] : ["estado", "notas", "pres", "vb", "fotos"]);
+    if (!adm && c.fotos) { // solo puede añadir fotos que subió él
+      for (const id of c.fotos.filter((x) => !(o.fotos || []).includes(x)))
+        if ((await t.get("fotosmeta/" + id))?.por !== ses.usuario) return json({ error: "Foto no válida" }, 403);
+    }
     if (!adm) { // sin permiso, el mecánico no puede cerrar ni dejar aprobado un presupuesto por su cuenta
       const aj = { vistoBuenoActivo: false, ...(await t.get("ajustes")) }, u = await t.get("usuarios/" + ses.usuario);
       if (aj.vistoBuenoActivo && !u?.libre) {

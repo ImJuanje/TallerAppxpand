@@ -26,7 +26,6 @@ const handler = async (req) => {
     const u = USER_OK.test(usuario) && (await T("main").get("usuarios/" + usuario));
     let passOk = false;
     try { passOk = !!u && typeof u.pass === "string" && checkPass(pw, u.pass); } catch (e) { console.error("checkPass", e); }
-    console.log("login", { usuario, existe: !!u, activo: u?.activo, passOk });
     if (!u || u.activo === false || !passOk) return json({ error: MAL }, 401);
     return json({ ok: true, rol: "mecanico" }, 200, { "set-cookie": crearCookie({ usuario, taller: "main", rol: "mecanico" }, !!body.mantener) });
   }
@@ -60,7 +59,6 @@ const handler = async (req) => {
     if (!creado) return json({ error: "Ese usuario ya existe" }, 409);
     await g.put("login/" + usuario, { taller: "main" }); // índice (ya no es necesario para entrar)
     await g.del(ck); // el código se usa una sola vez
-    console.log("activar ok", { usuario });
     return json({ ok: true });
   }
   return json({ error: "No encontrado" }, 404);

@@ -10,7 +10,11 @@ const handler = async (req) => {
   if (!ses) return json({ error: "No autorizado" }, 403);
   const t = T("main"), p = new URL(req.url).pathname.split("/").filter(Boolean); // [api, equipo|ajustes, x?]
   // Los mecánicos solo pueden LEER los ajustes (motivos y visto bueno)
-  if (ses.rol !== "admin" && !(p[1] === "ajustes" && req.method === "GET")) return json({ error: "No autorizado" }, 403);
+  if (ses.rol !== "admin") {
+    if (!(p[1] === "ajustes" && req.method === "GET")) return json({ error: "No autorizado" }, 403);
+    const u = await t.get("usuarios/" + ses.usuario); // una baja corta el acceso aunque la cookie siga viva
+    if (!u || u.activo === false) return json({ error: "No autorizado" }, 403);
+  }
   const body = ["POST", "PUT", "PATCH"].includes(req.method) ? await req.json().catch(() => ({})) : {};
 
   if (p[1] === "ajustes") {
