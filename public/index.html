@@ -13,18 +13,35 @@ p{margin:0 0 14px;color:#5b6784}label{display:block;font-weight:600;font-size:.9
 input[type=text],input[type=password]{width:100%;padding:11px 12px;border:1px solid #d5dbe7;border-radius:8px;font:inherit}
 input:focus-visible,button:focus-visible{outline:3px solid #8fb0ff;outline-offset:1px}
 .chk{display:flex;gap:8px;align-items:center;font-weight:400;margin-top:14px}
-button{width:100%;margin-top:18px;border:0;border-radius:8px;padding:12px;background:#24396a;color:#fff;font:600 1rem Barlow;cursor:pointer}
-#m{min-height:1.4em;margin-top:12px;color:#b3261e;font-size:.92rem}
+.btn{width:100%;margin-top:18px;border:0;border-radius:8px;padding:12px;background:#24396a;color:#fff;font:600 1rem Barlow;cursor:pointer}
+.lnk{display:block;margin:14px auto 0;background:none;border:0;color:#24396a;font:600 .92rem Barlow;text-decoration:underline;cursor:pointer}
+.plate{font:700 1.5rem "Barlow Semi Condensed",monospace;letter-spacing:.18em;text-align:center;text-transform:uppercase;background:#f6f2df;border:2px solid #14213d!important;border-left:14px solid #1c4fd8!important}
+#m{min-height:1.4em;margin-top:12px;color:#b3261e;font-size:.92rem}#m.ok{color:#1f7a4d}.hide{display:none}
 </style></head><body><div class="w"><div class="brand">Taller <b>AppXpand</b></div>
-<form class="card" id="f"><h1>Acceso del taller</h1><p>Entra con tu usuario de administrador.</p>
+<div class="card">
+<form id="f"><h1>Acceso al taller</h1><p>Entra con tu usuario y contraseña.</p>
 <label for="u">Usuario</label><input type="text" id="u" autocomplete="username" required>
 <label for="p">Contraseña</label><input type="password" id="p" autocomplete="current-password" required>
 <label class="chk"><input type="checkbox" id="k"> Mantener sesión en este dispositivo</label>
-<button>Entrar</button><div id="m" role="status" aria-live="polite"></div></form></div>
+<button class="btn">Entrar</button><button type="button" class="lnk" id="ir-alta">Tengo un código de alta</button></form>
+<form id="a" class="hide" autocomplete="off"><h1>Activa tu cuenta</h1><p>Usa el código que te ha dado tu taller.</p>
+<label for="ac">Código de alta</label><input type="text" id="ac" class="plate" maxlength="10" required placeholder="A1B2C3D4E5">
+<label for="au">Elige un usuario</label><input type="text" id="au" autocomplete="username" required>
+<label for="ap">Crea una contraseña (mínimo 8 caracteres)</label><input type="password" id="ap" autocomplete="new-password" minlength="8" required>
+<button class="btn">Crear mi cuenta</button><button type="button" class="lnk" id="ir-login">Volver a entrar</button></form>
+<div id="m" role="status" aria-live="polite"></div></div></div>
 <script>
-const $=i=>document.getElementById(i);
-fetch("/api/auth/yo").then(r=>r.ok&&(location.href="/panel.html")).catch(()=>{});
-$("f").onsubmit=async e=>{e.preventDefault();$("m").textContent="Entrando…";
- const r=await fetch("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({usuario:$("u").value,password:$("p").value,mantener:$("k").checked})});
- if(r.ok)location.href="/panel.html";else $("m").textContent=(await r.json().catch(()=>({}))).error||"No se ha podido entrar. Inténtalo de nuevo."};
+const $=i=>document.getElementById(i),msg=(t,ok)=>{$("m").textContent=t||"";$("m").className=ok?"ok":""};
+const post=(r,b)=>fetch("/api/auth/"+r,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b)});
+const err=async r=>(await r.json().catch(()=>({}))).error||"Algo ha fallado. Inténtalo de nuevo.";
+const dest=rol=>location.href=rol=="admin"?"/panel.html":"/mecanico.html";
+const vista=a=>{$("f").classList.toggle("hide",a);$("a").classList.toggle("hide",!a);msg("")};
+$("ir-alta").onclick=()=>vista(true);$("ir-login").onclick=()=>vista(false);
+fetch("/api/auth/yo").then(async r=>{if(r.ok)dest((await r.json()).rol)}).catch(()=>{});
+$("f").onsubmit=async e=>{e.preventDefault();msg("Entrando…");
+ const r=await post("login",{usuario:$("u").value,password:$("p").value,mantener:$("k").checked});
+ r.ok?dest((await r.json()).rol):msg(await err(r))};
+$("a").onsubmit=async e=>{e.preventDefault();msg("Creando tu cuenta…");
+ const r=await post("activar",{codigo:$("ac").value,usuario:$("au").value,password:$("ap").value});
+ if(r.ok){$("u").value=$("au").value;$("p").value="";vista(false);msg("Cuenta creada. Ya puedes entrar.",true);$("p").focus()}else msg(await err(r))};
 </script></body></html>
