@@ -47,6 +47,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1p
 .swl{display:flex;align-items:center;gap:10px;margin:8px 0;font-weight:500}.swl .sw{width:46px}
 .mec-f{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
 .cod{font:700 1.8rem "Barlow Semi Condensed",monospace;letter-spacing:.2em;margin:14px 0 4px;word-break:break-all}
+.chip{font-size:.75rem;font-weight:600;padding:2px 8px;border-radius:10px;background:#e3e8f1;color:var(--mute)}.chip.pendiente{background:#dbe6ff;color:#1c4fd8}.chip.usada{background:#d9f2e4;color:var(--ok)}
 </style></head>
 <body>
 <header class="top"><span class="brand">Taller <b>AppXpand</b></span><nav id="nav"></nav>
@@ -142,9 +143,15 @@ async function equipo(){await cargar();
  $("#v").innerHTML=`<div class="card"><h1>Equipo</h1><p class="mute">Genera un código de alta para cada mecánico. Caduca en 7 días y se usa una sola vez.</p>
  <div style="display:flex;gap:8px"><input id="q-nom" placeholder="Nombre del mecánico"><button class="btn" onclick="codigo()">Generar código</button></div>
  <div id="q-res" class="hide"><div class="cod" id="q-cod"></div><div class="mute">Cópialo ahora: no se vuelve a mostrar.</div></div><div id="q-err" class="mute"></div></div>
- <div class="card" style="margin-top:14px"><h2 style="font-size:1.2rem">Mecánicos</h2>${!API?'<p class="mute">Sin conexión con el servidor: modo demostración.</p>':EQ.length?EQ.map(u=>`<div class="mec-f"><div><b>${esc(u.nombre||u.usuario)}</b> <span class="mute">${esc(u.usuario)}${u.activo?"":" · de baja"}</span></div>${u.activo?sw(u.libre,`libre('${esc(u.usuario)}',this.checked)`,"Puede cerrar presupuestos sin visto bueno"):""}<button class="btn sec" onclick="baja('${esc(u.usuario)}',${!u.activo})">${u.activo?"Dar de baja":"Reactivar"}</button></div>`).join(""):'<p class="mute">Aún no hay mecánicos. Genera el primer código.</p>'}</div>`;
+ <div class="card" style="margin-top:14px"><h2 style="font-size:1.2rem">Mecánicos</h2>${!API?'<p class="mute">Sin conexión con el servidor: modo demostración.</p>':EQ.length?EQ.map(u=>`<div class="mec-f"><div><b>${esc(u.nombre||u.usuario)}</b> <span class="mute">${esc(u.usuario)}${u.activo?"":" · de baja"}</span></div>${u.activo?sw(u.libre,`libre('${esc(u.usuario)}',this.checked)`,"Puede cerrar presupuestos sin visto bueno"):""}<button class="btn sec" onclick="baja('${esc(u.usuario)}',${!u.activo})">${u.activo?"Dar de baja":"Reactivar"}</button></div>`).join(""):'<p class="mute">Aún no hay mecánicos. Genera el primer código.</p>'}</div><div class="card hide" id="inv" style="margin-top:14px"></div>`;
+ await pintaInv();
 }
-async function codigo(){try{const r=await api("equipo/codigo","POST",{nombre:$("#q-nom").value});$("#q-cod").textContent=r.codigo;$("#q-res").classList.remove("hide");$("#q-nom").value=""}catch(x){$("#q-err").textContent=x.message}}
+async function codigo(){try{const r=await api("equipo/codigo","POST",{nombre:$("#q-nom").value});$("#q-cod").textContent=r.codigo;$("#q-res").classList.remove("hide");$("#q-nom").value="";pintaInv()}catch(x){$("#q-err").textContent=x.message}}
+const chip=e=>`<span class="chip ${e}">${{pendiente:"Sin usar",caducada:"Caducada",usada:"Usada"}[e]}</span>`;
+async function pintaInv(){$("#inv").classList.toggle("hide",!API);if(!API)return;let l=[];try{l=await api("equipo/invitaciones")}catch(x){}
+ $("#inv").innerHTML=`<h2 style="font-size:1.2rem">Invitaciones</h2>`+(l.length?l.map(i=>`<div class="mec-f"><div><b>${esc(i.nombre||"Sin nombre")}</b> ${chip(i.estado)}<div class="mute">${i.estado=="usada"?"Cuenta creada: "+esc(i.usuario):(i.estado=="pendiente"?"Caduca el ":"Caducó el ")+new Date(i.exp).toLocaleDateString("es-ES")}</div></div><div>${i.estado=="usada"?"":(i.estado=="pendiente"?`<button class="btn sec" onclick="invAccion('${i.id}','anular')">Anular</button> `:"")+`<button class="btn sec" onclick="invAccion('${i.id}','regenerar')">Regenerar</button>`}</div></div>`).join(""):'<p class="mute">No hay invitaciones. Genera un código arriba.</p>')}
+async function invAccion(id,a){try{if(a=="anular"&&!confirm("¿Anular esta invitación? El código dejará de funcionar."))return;const r=await api(`equipo/invitaciones/${id}/${a}`,"POST",{});
+ if(r.codigo){$("#q-cod").textContent=r.codigo;$("#q-res").classList.remove("hide");scrollTo(0,0)}await pintaInv()}catch(x){alert(x.message)}}
 async function libre(u,v){await api("equipo/"+u,"PATCH",{libre:v});equipo()}
 async function baja(u,reactivar){const n=D.ordenes.filter(o=>o.mec==u&&o.estado!="Entregado").length;
  if(!reactivar&&!confirm(`¿Dar de baja a ${u}?`+(n?` Sus ${n} vehículos pasarán a "Sin asignar" para que los reasignes.`:"")))return;
