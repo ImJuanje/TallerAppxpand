@@ -20,13 +20,13 @@ input:focus-visible,button:focus-visible{outline:3px solid #8fb0ff;outline-offse
 </style></head><body><div class="w"><div class="brand">Taller <b>AppXpand</b></div>
 <div class="card">
 <form id="f"><h1>Acceso al taller</h1><p>Entra con tu usuario y contraseña.</p>
-<label for="u">Usuario</label><input type="text" id="u" autocomplete="username" required>
-<label for="p">Contraseña</label><input type="password" id="p" autocomplete="current-password" required>
+<label for="u">Usuario</label><input type="text" id="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+<label for="p">Contraseña</label><input type="password" id="p" autocomplete="current-password" autocapitalize="none" autocorrect="off" required>
 <label class="chk"><input type="checkbox" id="k"> Mantener sesión en este dispositivo</label>
 <button class="btn">Entrar</button><button type="button" class="lnk" id="ir-alta">Tengo un código de alta</button></form>
 <form id="a" class="hide" autocomplete="off"><h1>Activa tu cuenta</h1><p>Usa el código que te ha dado tu taller.</p>
 <label for="ac">Código de alta</label><input type="text" id="ac" class="plate" maxlength="10" required placeholder="A1B2C3D4E5">
-<label for="au">Elige un usuario</label><input type="text" id="au" autocomplete="username" required>
+<label for="au">Elige un usuario</label><input type="text" id="au" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
 <label for="ap">Crea una contraseña (mínimo 8 caracteres)</label><input type="password" id="ap" autocomplete="new-password" minlength="8" required>
 <button class="btn">Crear mi cuenta</button><button type="button" class="lnk" id="ir-login">Volver a entrar</button></form>
 <div id="m" role="status" aria-live="polite"></div></div></div>
