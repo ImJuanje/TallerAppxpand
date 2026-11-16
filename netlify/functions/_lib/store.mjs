@@ -5,7 +5,11 @@ const db = () => getStore({ name: "taller", consistency: "strong" });
 export const g = {
   get: (k) => db().get(k, { type: "json" }),
   put: (k, v) => db().setJSON(k, v),
-  putNew: async (k, v) => (await db().setJSON(k, v, { onlyIfNew: true })).modified,
+  putNew: async (k, v) => {
+    if (await db().get(k)) return false;
+    const r = await db().setJSON(k, v, { onlyIfNew: true });
+    return r?.modified !== false;
+  },
   del: (k) => db().delete(k),
 };
 
@@ -15,7 +19,11 @@ export const T = (taller) => {
   return {
     get: (k) => db().get(p(k), { type: "json" }),
     put: (k, v) => db().setJSON(p(k), v),
-    putNew: async (k, v) => (await db().setJSON(p(k), v, { onlyIfNew: true })).modified,
+    putNew: async (k, v) => {
+      if (await db().get(p(k))) return false;
+      const r = await db().setJSON(p(k), v, { onlyIfNew: true });
+      return r?.modified !== false;
+    },
     del: (k) => db().delete(p(k)),
     list: async (pre) => (await db().list({ prefix: p(pre) })).blobs.map((b) => b.key.slice(p("").length)),
   };
