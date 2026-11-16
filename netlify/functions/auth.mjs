@@ -36,11 +36,13 @@ const handler = async (req) => {
   if (accion === "yo") {
     const s = sesion(req);
     if (!s) return json({ error: "Sin sesión" }, 401);
+    let extra = {};
     if (s.rol === "mecanico") { // una baja corta el acceso aunque la cookie siga viva
       const u = await T("main").get("usuarios/" + s.usuario);
-      if (!u || !u.activo) return json({ error: "Cuenta desactivada" }, 401, { "set-cookie": borrarCookie() });
+      if (!u || u.activo === false) return json({ error: "Cuenta desactivada" }, 401, { "set-cookie": borrarCookie() });
+      extra = { nombre: u.nombre || s.usuario, libre: !!u.libre };
     }
-    return json({ usuario: s.usuario, rol: s.rol });
+    return json({ usuario: s.usuario, rol: s.rol, ...extra });
   }
 
   // Activación de cuenta con código de alta

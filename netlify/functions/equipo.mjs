@@ -6,8 +6,11 @@ const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, header
 const MOTIVOS = ["Revisión", "Aceite y filtros", "Frenos", "Neumáticos", "Diagnóstico de avería", "Aire acondicionado", "Embrague", "Distribución", "Sistema eléctrico", "Carrocería"];
 
 const handler = async (req) => {
-  if (!exigir(req, "admin")) return json({ error: "No autorizado" }, 403);
+  const ses = exigir(req);
+  if (!ses) return json({ error: "No autorizado" }, 403);
   const t = T("main"), p = new URL(req.url).pathname.split("/").filter(Boolean); // [api, equipo|ajustes, x?]
+  // Los mecánicos solo pueden LEER los ajustes (motivos y visto bueno)
+  if (ses.rol !== "admin" && !(p[1] === "ajustes" && req.method === "GET")) return json({ error: "No autorizado" }, 403);
   const body = ["POST", "PUT", "PATCH"].includes(req.method) ? await req.json().catch(() => ({})) : {};
 
   if (p[1] === "ajustes") {
