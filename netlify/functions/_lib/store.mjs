@@ -11,6 +11,7 @@ export const g = {
     return r?.modified !== false;
   },
   del: (k) => db().delete(k),
+  list: async (pre) => (await db().list({ prefix: pre })).blobs.map((b) => b.key),
 };
 
 // Acceso por taller: el prefijo sale SIEMPRE de la sesión, nunca del cliente
