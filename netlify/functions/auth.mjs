@@ -22,9 +22,12 @@ const handler = async (req) => {
       return json({ ok: true, rol: "admin" }, 200, { "set-cookie": crearCookie({ usuario: "admin", taller: "main", rol: "admin" }, !!body.mantener) });
     }
     // Mecánico: cuenta creada al activar un código de alta
-    const l = USER_OK.test(usuario) && (await g.get("login/" + usuario));
-    const u = l && (await T("main").get("usuarios/" + usuario));
-    if (!u || !u.activo || !checkPass(pw, u.pass)) return json({ error: MAL }, 401);
+    // Se busca directamente el usuario (sin depender del índice login/)
+    const u = USER_OK.test(usuario) && (await T("main").get("usuarios/" + usuario));
+    let passOk = false;
+    try { passOk = !!u && typeof u.pass === "string" && checkPass(pw, u.pass); } catch (e) { console.error("checkPass", e); }
+    console.log("login", { usuario, existe: !!u, activo: u?.activo, passOk });
+    if (!u || u.activo === false || !passOk) return json({ error: MAL }, 401);
     return json({ ok: true, rol: "mecanico" }, 200, { "set-cookie": crearCookie({ usuario, taller: "main", rol: "mecanico" }, !!body.mantener) });
   }
 
@@ -50,9 +53,12 @@ const handler = async (req) => {
     const ck = "codigo/" + sha(String(body.codigo || "").trim().toUpperCase());
     const c = await g.get(ck);
     if (!c || c.exp < Date.now()) return json({ error: "Código no válido o caducado" }, 400);
-    if (!(await g.putNew("login/" + usuario, { taller: "main" }))) return json({ error: "Ese usuario ya existe" }, 409);
-    await T("main").put("usuarios/" + usuario, { usuario, nombre: c.nombre, rol: "mecanico", activo: true, libre: false, pass: hashPass(body.password) });
+    // Se crea el usuario de forma atómica: si ya existe, no se pisa
+    const creado = await T("main").putNew("usuarios/" + usuario, { usuario, nombre: c.nombre, rol: "mecanico", activo: true, libre: false, pass: hashPass(String(body.password)) });
+    if (!creado) return json({ error: "Ese usuario ya existe" }, 409);
+    await g.put("login/" + usuario, { taller: "main" }); // índice (ya no es necesario para entrar)
     await g.del(ck); // el código se usa una sola vez
+    console.log("activar ok", { usuario });
     return json({ ok: true });
   }
   return json({ error: "No encontrado" }, 404);
