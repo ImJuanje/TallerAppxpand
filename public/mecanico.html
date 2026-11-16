@@ -3,18 +3,130 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow"><meta name="theme-color" content="#0b1b3a">
 <title>Mecánico · Taller AppXpand</title>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@700&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;background:#0b1b3a;font:16px/1.5 Barlow,system-ui,sans-serif;color:#14213d}
-.card{width:100%;max-width:400px;background:#fff;border-radius:10px;padding:26px 24px}
-h1{font:700 1.6rem "Barlow Semi Condensed";margin:0 0 6px}p{margin:0 0 18px;color:#5b6784}
-button{border:0;border-radius:8px;padding:11px 18px;background:#24396a;color:#fff;font:600 1rem Barlow;cursor:pointer}
-button:focus-visible{outline:3px solid #8fb0ff;outline-offset:1px}
-</style></head><body><main class="card"><h1 id="h">Cuenta activada</h1>
-<p>Tu acceso ya funciona. Tu tablero con los vehículos que te asigne el taller estará disponible muy pronto.</p>
-<button id="s">Salir</button></main>
+:root{--navy:#0b1b3a;--steel:#24396a;--paper:#eef1f6;--ink:#14213d;--mute:#5b6784;--line:#d5dbe7;--ok:#1f7a4d;--plate:#f6f2df;--r:10px}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{font:16px/1.45 Barlow,system-ui,sans-serif;color:var(--ink);background:var(--paper);padding-bottom:env(safe-area-inset-bottom)}
+h1,h2,.mat{font-family:"Barlow Semi Condensed",sans-serif;margin:0}
+button,select,input,textarea{font:inherit}
+.top{background:var(--navy);color:#fff;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+.brand{font:700 1.15rem "Barlow Semi Condensed";margin-right:6px}.brand b{color:#8fb0ff}
+nav{display:flex;gap:6px;flex:1}nav button{border:0;background:none;color:#cfd8ee;padding:7px 12px;border-radius:8px;font-weight:600;cursor:pointer}
+nav button.on{background:#ffffff22;color:#fff}
+.yo{font-size:.9rem;color:#9fb0d6}
+main{padding:16px}
+.board{display:flex;gap:12px;overflow-x:auto;padding-bottom:10px;align-items:flex-start;scroll-snap-type:x proximity}
+.col{flex:0 0 min(270px,82vw);background:#e3e8f1;border-radius:var(--r);padding:10px;min-height:140px;scroll-snap-align:start}
+.col h2{font-size:1.05rem;display:flex;justify-content:space-between;margin-bottom:8px}.col h2 span{color:var(--mute)}
+.vac{color:var(--mute);font-size:.88rem;margin:6px 2px}
+.tj{background:#fff;border-radius:8px;padding:8px;margin-bottom:8px;display:flex;gap:10px;cursor:pointer;box-shadow:0 1px 2px #0002}
+.tj img,.sf{width:64px;height:64px;border-radius:6px;object-fit:cover;flex:none;background:#dfe4ee;color:var(--mute);font-size:.7rem;display:grid;place-items:center;text-align:center}
+.tj small{display:block;color:var(--mute);line-height:1.25}
+.mat{display:inline-block;background:var(--plate);border:1.5px solid var(--ink);border-left:8px solid #1c4fd8;border-radius:4px;padding:0 8px;letter-spacing:.12em;font-size:1.05rem}
+.card{background:#fff;border-radius:var(--r);padding:18px;max-width:720px;margin:0 auto}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}@media(max-width:560px){.grid{grid-template-columns:1fr}}
+label{display:block;font-weight:600;font-size:.9rem;margin:12px 0 4px}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid #8fb0ff;outline-offset:1px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}.chips label{display:flex;align-items:center;gap:6px;margin:0;font-weight:500;border:1px solid var(--line);border-radius:20px;padding:5px 12px;cursor:pointer}
+.chips input{width:auto}
+.btn{border:0;border-radius:8px;padding:10px 16px;background:var(--steel);color:#fff;font-weight:600;cursor:pointer}.btn.sec{background:#e3e8f1;color:var(--ink)}
+.btn.sm{padding:4px 10px;font-size:.85rem;margin-top:6px}.btn:disabled{opacity:.6;cursor:wait}
+.hide{display:none!important}
+dialog{border:0;border-radius:14px;padding:0;width:min(720px,100%);max-height:92vh}dialog::backdrop{background:#0b1b3acc}
+.fh{display:flex;gap:14px;align-items:center;padding:16px;border-bottom:1px solid var(--line)}.fh img,.fh .sf{width:92px;height:92px;border-radius:8px;object-fit:cover}
+.fb{padding:4px 16px 18px}.fb h2{font-size:1.1rem;margin:18px 0 6px}
+.fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;margin-top:8px}.fotos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px}
+table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left;font-size:.92rem}td:last-child,th:last-child{text-align:right}
+.tot{text-align:right;margin-top:8px}.ok{color:var(--ok);font-weight:600}.mute{color:var(--mute)}
+.hist{padding:8px 0;border-bottom:1px solid var(--line);font-size:.92rem}
+.pl{display:grid;grid-template-columns:2fr 1.2fr 1fr auto;gap:8px;align-items:end}
+@media(max-width:560px){.pl{grid-template-columns:1fr 1fr}.pl>:first-child{grid-column:1/-1}.pl .btn{grid-column:1/-1}}
+</style></head>
+<body>
+<header class="top"><span class="brand">Taller <b>AppXpand</b></span><nav id="nav"></nav>
+<span class="yo" id="yo"></span><button class="btn sec" onclick="salir()">Salir</button></header>
+<main id="v"><p class="mute">Cargando…</p></main>
+<dialog id="fd"></dialog>
 <script>
-fetch("/api/auth/yo").then(async r=>{if(!r.ok)return location.href="/";const j=await r.json();
- if(j.rol=="admin")return location.href="/panel.html";document.getElementById("h").textContent="Hola, "+j.usuario}).catch(()=>{});
-document.getElementById("s").onclick=async()=>{await fetch("/api/auth/logout",{method:"POST"});location.href="/"};
+const ESTADOS=["Recibido","Diagnóstico","Esperando aprobación","En reparación","Listo","Entregado"];
+const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const eur=x=>x.toLocaleString("es-ES",{style:"currency",currency:"EUR"}),tot=o=>o.pres.reduce((s,l)=>s+ +l.i,0);
+const mots=o=>[...o.mot,...(o.otro?[o.otro]:[])].join(", "),src=f=>"/api/fotos/"+f;
+let YO={},VB=false,MOT=[],OS=[],vista="tablero",cur=null,fotoTmp="";
+
+const api=async(r,m="GET",b)=>{const x=await fetch("/api/"+r,{method:m,headers:{"content-type":"application/json"},body:b?JSON.stringify(b):undefined});
+ const j=await x.json().catch(()=>({}));if(x.status==401||x.status==403){location.href="/";throw new Error("Sesión caducada")}
+ if(!x.ok)throw new Error(j.error||"Algo ha fallado");return j};
+async function cargar(){const[y,a,os]=await Promise.all([api("auth/yo"),api("ajustes"),api("ordenes")]);
+ if(y.rol=="admin"){location.href="/panel.html";return false}
+ YO=y;VB=a.vistoBuenoActivo;MOT=a.motivos;OS=os;$("#yo").textContent=y.nombre||y.usuario;return true}
+async function salir(){await fetch("/api/auth/logout",{method:"POST"});location.href="/"}
+const NAVS=[["tablero","Tablero"],["entrada","Nueva entrada"]];
+const ir=v=>{vista=v;pintar()};
+function pintar(){$("#nav").innerHTML=NAVS.map(([k,t])=>`<button class="${vista==k?"on":""}" onclick="ir('${k}')">${t}</button>`).join("");({tablero,entrada})[vista]()}
+
+/* 1. TABLERO: solo mis vehículos en el taller */
+const mios=()=>OS.filter(o=>o.mec===YO.usuario&&o.estado!=="Entregado");
+const sig=o=>ESTADOS[ESTADOS.indexOf(o.estado)+1];
+const tarjeta=o=>`<article class="tj" draggable="true" ondragstart="event.dataTransfer.setData('t','${o.id}')" onclick="abrir('${o.id}')">${o.foto?`<img src="${src(o.foto)}" alt="">`:`<div class="sf">Sin foto</div>`}<div><span class="mat">${esc(o.mat)}</span><div>${esc(o.marca)} ${esc(o.modelo)}</div><small>${esc(mots(o))}</small><button class="btn sm" aria-label="Pasar a ${esc(sig(o))}" onclick="event.stopPropagation();poner('${o.id}','${esc(sig(o))}')">${sig(o)=="Entregado"?"Entregar":"Avanzar ›"}</button></div></article>`;
+function tablero(){const os=mios();
+ $("#v").innerHTML=`<div class="board">`+ESTADOS.map(e=>{const l=os.filter(o=>o.estado==e);
+ return `<section class="col" ondragover="event.preventDefault()" ondrop="soltar(event,'${e}')"><h2>${e}<span>${e=="Entregado"?"":l.length}</span></h2>${e=="Entregado"?'<p class="vac">Suelta aquí el coche al entregarlo. Sale del tablero y queda en su historial.</p>':l.map(tarjeta).join("")||'<p class="vac">Sin vehículos</p>'}</section>`}).join("")+`</div>`+(os.length?"":'<p class="mute" style="margin-top:12px">Aún no tienes vehículos. Da de alta uno en «Nueva entrada».</p>')}
+function soltar(ev,e){ev.preventDefault();poner(ev.dataTransfer.getData("t"),e)}
+async function poner(id,e){const o=OS.find(x=>x.id==id);if(!o||o.estado===e)return;
+ if(e==="Entregado"&&!confirm(`¿Marcar ${o.mat} como entregado?`))return;
+ const ant=o.estado;o.estado=e;tablero();
+ try{await api("ordenes/"+o.id,"PUT",{estado:e})}catch(x){o.estado=ant;tablero();alert("No se ha podido guardar: "+x.message)}}
+
+/* 2. ALTA DE VEHÍCULO */
+function entrada(){fotoTmp="";
+ $("#v").innerHTML=`<form class="card" onsubmit="guardar(event)"><h1>Nueva entrada</h1>
+ <div class="grid"><div><label for="e-mat">Matrícula</label><input id="e-mat" required onblur="auto()" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase"></div><div><label for="e-km">Kilómetros</label><input id="e-km" type="number" inputmode="numeric" min="0" required></div>
+ <div><label for="e-marca">Marca</label><input id="e-marca" required></div><div><label for="e-modelo">Modelo</label><input id="e-modelo" required></div><div><label for="e-anio">Año</label><input id="e-anio" type="number" inputmode="numeric" min="1950" max="2030" required></div>
+ <div><label for="e-foto">Foto del vehículo</label><input id="e-foto" type="file" accept="image/*" capture="environment" onchange="leer(this)"></div>
+ <div><label for="e-cli">Cliente</label><input id="e-cli" required></div><div><label for="e-tel">Teléfono</label><input id="e-tel" type="tel" required></div></div>
+ <label>Motivo de la visita</label><div class="chips">${MOT.map(m=>`<label><input type="checkbox" name="mot" value="${esc(m)}">${esc(m)}</label>`).join("")}<label><input type="checkbox" id="e-otrochk" onchange="$('#e-otro').classList.toggle('hide',!this.checked)">Otro</label></div>
+ <input id="e-otro" class="hide" placeholder="Describe el motivo" style="margin-top:8px">
+ <p class="mute" style="margin:14px 0 0">El vehículo quedará asignado a ti.</p>
+ <p style="margin-top:12px"><button class="btn" id="e-ok">Registrar entrada</button></p></form>`}
+function leer(i){const f=i.files[0];fotoTmp="";if(f)comprime(f).then(d=>fotoTmp=d).catch(()=>alert("No se ha podido leer la foto"))}
+async function auto(){const m=$("#e-mat").value.toUpperCase().replace(/\s/g,"");if(m.length<4)return;
+ try{const o=await api("ordenes?mat="+encodeURIComponent(m));["marca","modelo","anio","cli","tel"].forEach(k=>{if(o[k]!==undefined&&!$("#e-"+k).value)$("#e-"+k).value=o[k]})}catch(x){}}
+async function guardar(ev){ev.preventDefault();const g=i=>$("#e-"+i).value.trim();
+ const mot=[...document.querySelectorAll("[name=mot]:checked")].map(x=>x.value),otro=$("#e-otrochk").checked?g("otro"):"";
+ if(!mot.length&&!otro)return alert("Elige al menos un motivo.");
+ const b=$("#e-ok");b.disabled=true;
+ try{const o={mat:g("mat"),marca:g("marca"),modelo:g("modelo"),anio:+g("anio"),km:+g("km"),cli:g("cli"),tel:g("tel"),mot,otro};
+  if(fotoTmp)o.foto=(await api("fotos","POST",{data:fotoTmp})).id;
+  await api("ordenes","POST",o);await cargar();fotoTmp="";ir("tablero")}catch(x){alert(x.message);b.disabled=false}}
+
+/* 3. FICHA DE LA ORDEN + historial del coche */
+function abrir(id){cur=OS.find(o=>o.id==id);ficha()}
+function ficha(){const o=cur,libre=YO.libre||!VB,hist=OS.filter(x=>x.mat==o.mat&&x.id!=o.id);
+ const vb=o.vb=="ok"?'<span class="ok">Presupuesto aprobado</span>':o.vb=="pendiente"?'<span class="mute">Pendiente del visto bueno del taller</span>':(libre?'<button class="btn" onclick="setVB(\'ok\')">Cerrar presupuesto</button>':'<button class="btn" onclick="setVB(\'pendiente\')">Pedir visto bueno</button>');
+ $("#fd").innerHTML=`<div class="fh">${o.foto?`<img src="${src(o.foto)}" alt="">`:'<div class="sf">Sin foto</div>'}<div><span class="mat">${esc(o.mat)}</span><h1 style="font-size:1.4rem">${esc(o.marca)} ${esc(o.modelo)} · ${o.anio}</h1><span class="mute">${(+o.km).toLocaleString("es-ES")} km · entrada ${esc(o.fecha)}</span></div><button class="btn sec" style="margin-left:auto" onclick="$('#fd').close()">Cerrar</button></div>
+ <div class="fb"><label for="f-est">Estado</label><select id="f-est" onchange="cambia('estado',this.value)">${ESTADOS.map(e=>`<option ${o.estado==e?"selected":""}>${e}</option>`).join("")}</select>
+ <h2>Entrada</h2><div>${esc(o.cli)} · <a href="tel:${esc(o.tel)}">${esc(o.tel)}</a></div><div class="mute">${esc(mots(o))}</div>
+ <h2>Notas para el cliente</h2><textarea rows="3" onchange="cambia('notas',this.value)" placeholder="Explica qué has encontrado y qué recomiendas">${esc(o.notas)}</textarea>
+ <h2>Fotos</h2><input type="file" accept="image/*" multiple onchange="fotos(this)"><div class="fotos">${o.fotos.map(f=>`<img src="${src(f)}" alt="Foto de la orden">`).join("")}</div>
+ <h2>Presupuesto</h2><table><tr><th>Concepto</th><th>Tipo</th><th>Importe</th></tr>${o.pres.map((l,i)=>`<tr><td>${esc(l.c)}</td><td>${esc(l.t)}</td><td>${eur(+l.i)} <button class="btn sec" style="padding:2px 8px" onclick="quitar(${i})" aria-label="Quitar línea">×</button></td></tr>`).join("")||'<tr><td colspan="3" class="mute">Añade la primera línea</td></tr>'}</table>
+ <div class="pl"><div><label for="p-c">Concepto</label><input id="p-c"></div><div><label for="p-t">Tipo</label><select id="p-t"><option>Mano de obra</option><option>Pieza</option></select></div><div><label for="p-i">Importe (€)</label><input id="p-i" type="number" inputmode="decimal" min="0" step="0.01"></div><button class="btn" onclick="linea()">Añadir</button></div>
+ <div class="tot">Base ${eur(tot(o))} · IVA 21 % ${eur(tot(o)*.21)} · <b>Total ${eur(tot(o)*1.21)}</b></div><p style="text-align:right">${vb}</p>
+ <h2>Historial de este coche</h2>${hist.map(x=>`<div class="hist"><b>${esc(x.fecha)}</b> · ${esc(mots(x))} · ${esc(x.estado)} · ${eur(tot(x)*1.21)}<div class="mute">${esc(x.notas)}</div></div>`).join("")||'<p class="mute">Primera visita registrada.</p>'}</div>`;
+ if(!$("#fd").open)$("#fd").showModal()}
+// guarda en el servidor y refleja lo que éste devuelve (p. ej. un visto bueno que pasa a «pendiente»)
+async function save(ks){try{Object.assign(cur,await api("ordenes/"+cur.id,"PUT",Object.fromEntries(ks.map(k=>[k,cur[k]]))))}catch(x){alert("No se ha podido guardar: "+x.message)}}
+async function cambia(k,v){cur[k]=v;await save([k])}
+async function fotos(i){for(const f of i.files){try{cur.fotos.push((await api("fotos","POST",{data:await comprime(f)})).id)}catch(x){alert(x.message)}}await save(["fotos"]);ficha()}
+async function linea(){const c=$("#p-c").value.trim(),i=$("#p-i").value;if(!c||i==="")return;cur.pres.push({c,t:$("#p-t").value,i:+i});cur.vb="";await save(["pres","vb"]);ficha()}
+async function quitar(i){cur.pres.splice(i,1);cur.vb="";await save(["pres","vb"]);ficha()}
+async function setVB(v){cur.vb=v;await save(["vb"]);ficha()}
+$("#fd").addEventListener("close",()=>{if(vista=="tablero")tablero()});
+const comprime=async f=>{const b=await createImageBitmap(f),k=Math.min(1,1000/Math.max(b.width,b.height)),c=document.createElement("canvas");c.width=b.width*k;c.height=b.height*k;c.getContext("2d").drawImage(b,0,0,c.width,c.height);return c.toDataURL("image/jpeg",.72)};
+
+cargar().then(ok=>ok&&pintar()).catch(x=>{$("#v").innerHTML='<p class="mute">No se ha podido cargar: '+esc(x.message)+"</p>"});
+// refresco suave del tablero (por si el taller te asigna un coche)
+setInterval(async()=>{if(vista!="tablero"||$("#fd").open||document.hidden)return;try{OS=await api("ordenes");tablero()}catch(x){}},45000);
 </script></body></html>
