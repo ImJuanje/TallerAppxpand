@@ -5,7 +5,7 @@ export const config = { path: ["/api/equipo", "/api/equipo/*", "/api/ajustes"] }
 const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
 const MOTIVOS = ["Revisión", "Aceite y filtros", "Frenos", "Neumáticos", "Diagnóstico de avería", "Aire acondicionado", "Embrague", "Distribución", "Sistema eléctrico", "Carrocería"];
 
-export default async (req) => {
+const handler = async (req) => {
   if (!exigir(req, "admin")) return json({ error: "No autorizado" }, 403);
   const t = T("main"), p = new URL(req.url).pathname.split("/").filter(Boolean); // [api, equipo|ajustes, x?]
   const body = ["POST", "PUT", "PATCH"].includes(req.method) ? await req.json().catch(() => ({})) : {};
@@ -39,4 +39,9 @@ export default async (req) => {
     }
   }
   return json({ error: "No encontrado" }, 404);
+};
+
+export default async (req) => {
+  try { return await handler(req); }
+  catch (e) { console.error(e); return json({ error: "Error del servidor: " + (e?.message || e) }, 500); }
 };

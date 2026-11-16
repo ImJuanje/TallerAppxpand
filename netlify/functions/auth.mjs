@@ -9,7 +9,7 @@ const igual = (a, b) => timingSafeEqual(Buffer.from(sha(String(a)), "hex"), Buff
 const MAL = "Usuario o contraseña incorrectos";
 const USER_OK = /^[a-z0-9._-]{3,30}$/;
 
-export default async (req) => {
+const handler = async (req) => {
   const accion = new URL(req.url).pathname.split("/").pop();
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
 
@@ -56,4 +56,9 @@ export default async (req) => {
     return json({ ok: true });
   }
   return json({ error: "No encontrado" }, 404);
+};
+
+export default async (req) => {
+  try { return await handler(req); }
+  catch (e) { console.error(e); return json({ error: "Error del servidor: " + (e?.message || e) }, 500); }
 };
