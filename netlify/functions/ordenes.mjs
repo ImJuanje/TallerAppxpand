@@ -1,5 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { T } from "./_lib/store.mjs";
-import { exigir, vigente } from "./_lib/auth.mjs";
+import { exigir, vigente, sha } from "./_lib/auth.mjs";
 
 export const config = { path: ["/api/ordenes", "/api/ordenes/*", "/api/fotos", "/api/fotos/*"] };
 const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
@@ -108,6 +109,7 @@ const handler = async (req) => {
     o.id = nuevoId(); o.creado = Date.now(); o.rev = 1;
     o.fecha = new Date().toLocaleDateString("es-ES", { timeZone: "Europe/Madrid" });
     o.mod = o.creado; o.modPor = ses.usuario;
+    o.hist = [{ estado: o.estado, fecha: o.creado, por: ses.usuario }]; // historial de estados (alimentará la línea de tiempo del cliente)
     await t.put("ordenes/" + o.id, o);
     return json(pub(o), 201);
   }
@@ -149,6 +151,59 @@ const handler = async (req) => {
         const err = errorDatos(nuevo, cambios.filter((k) => DATOS.includes(k)));
         if (err) return { out: [400, { error: err }] };
       }
+      if (cambios.includes("estado")) // órdenes anteriores a este cambio: se parte del estado que tenían (fecha aproximada)
+        nuevo.hist = [...(o.hist ?? [{ estado: o.estado, fecha: o.creado, aprox: o.estado !== "Recibido" }]), { estado: n.estado, fecha: Date.now(), por: ses.usuario }].slice(-100);
+      return { write: nuevo, out: [200, pub(nuevo)] };
+    });
+    return json(r[1], r[0]);
+  }
+
+  // Enlace del cliente (admin o mecánico asignado). El token se muestra UNA vez al generarlo; solo se guarda su huella.
+  //  · Caduca a los 30 días. Generar otro anula el anterior (aunque no hubiera caducado). Se puede anular sin sustituirlo.
+  if (ID.test(p[2] || "") && p[3] === "enlace") {
+    const o = await t.get("ordenes/" + p[2]);
+    if (!o) return json({ error: "No existe" }, 404);
+    if (!adm && o.mec !== ses.usuario) return json({ error: "No autorizado" }, 403);
+    const act = await t.get("enlaceorden/" + p[2]);
+    if (req.method === "GET") return json(act && act.exp > Date.now() ? { activo: true, exp: act.exp, creado: act.creado, por: act.por } : { activo: false, caducado: !!act });
+    if (req.method === "POST") {
+      if (body.accion === "revocar") {
+        if (act) { await t.del("enlaces/" + act.h); await t.del("enlaceorden/" + p[2]); }
+        return json({ activo: false });
+      }
+      const token = randomBytes(24).toString("base64url"), h = sha(token), creado = Date.now(), exp = creado + 30 * 864e5;
+      await t.put("enlaces/" + h, { orden: p[2], creado, exp });
+      await t.put("enlaceorden/" + p[2], { h, creado, exp, por: ses.usuario });
+      if (act) await t.del("enlaces/" + act.h);
+      return json({ token, exp, activo: true });
+    }
+  }
+
+  // Enviar el presupuesto al cliente = congelar una VERSIÓN numerada e inmutable de las líneas actuales.
+  //  · Solo se puede enviar un presupuesto cerrado/aprobado (vb "ok"): un mecánico sin permiso no llega ahí sin el visto bueno del admin.
+  //  · Si las líneas son las mismas que la última versión enviada, no se crea otra (idempotente).
+  //  · Si se edita el borrador después, la versión enviada no cambia: hay que enviar una nueva (n+1).
+  //  · Misma protección de versiones que al editar: si alguien tocó el presupuesto o el visto bueno después de que lo vieras → 409.
+  if (req.method === "POST" && ID.test(p[2] || "") && p[3] === "presupuesto") {
+    if (!Number.isInteger(body.rev) || body.rev < 0) return json({ error: "Falta la versión de la orden. Recarga la página." }, 400);
+    const r2 = (x) => Math.round(x * 100) / 100;
+    const r = await t.mutate("ordenes/" + p[2], (o) => {
+      if (!o) return { out: [404, { error: "No existe" }] };
+      if (!adm && o.mec !== ses.usuario) return { out: [403, { error: "No autorizado" }] };
+      const fr = o.fr || {}, fp = o.fp || {}, choque = ["pres", "vb"].filter((k) => (fr[k] || 0) > body.rev);
+      if (choque.length) {
+        const quienes = [...new Set(choque.map((k) => fp[k]).filter((x) => x && x !== ses.usuario))];
+        return { out: [409, { error: `Otra persona${quienes.length ? ` (${quienes.join(", ")})` : ""} ha cambiado ${[...new Set(choque.map((k) => ETIQ[k]))].join(" y ")} mientras lo mirabas. Se ha cargado la versión actual: revísala y vuelve a enviar.`, actual: pub(o) }] };
+      }
+      const lineas = (o.pres || []).map((l) => ({ c: l.c, t: l.t, i: l.i }));
+      if (!lineas.length) return { out: [400, { error: "El presupuesto está vacío" }] };
+      if (o.vb !== "ok") return { out: [400, { error: "El presupuesto aún no está cerrado ni aprobado" }] };
+      const huella = sha(JSON.stringify(lineas.map((l) => [l.c, l.t, l.i]))), vs = o.presV || [], ult = vs[vs.length - 1];
+      if (ult && ult.huella === huella) return { out: [200, pub(o)] };
+      if (vs.length >= 20) return { out: [400, { error: "Demasiadas versiones enviadas de este presupuesto" }] };
+      const base = lineas.reduce((a, l) => a + (+l.i || 0), 0), v = (o.rev || 0) + 1;
+      const ver = { n: (ult?.n || 0) + 1, lineas, base: r2(base), iva: r2(base * 0.21), total: r2(base * 1.21), huella, enviada: Date.now(), por: ses.usuario };
+      const nuevo = { ...o, presV: [...vs, ver], rev: v, fr: { ...fr, presV: v }, fp: { ...fp, presV: ses.usuario }, mod: Date.now(), modPor: ses.usuario };
       return { write: nuevo, out: [200, pub(nuevo)] };
     });
     return json(r[1], r[0]);
