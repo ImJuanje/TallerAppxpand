@@ -55,6 +55,11 @@ const handler = async (req) => {
   const ses = exigir(req); // admin o mecánico
   if (!ses) return json({ error: "No autorizado" }, 403);
   const adm = ses.rol === "admin", t = T("main"), url = new URL(req.url);
+  // La IP y el navegador con los que el cliente respondió al presupuesto solo los ve el admin
+  const paraVer = (o) => {
+    const r = pub(o);
+    return adm || !r.presV?.some((v) => v.dec) ? r : { ...r, presV: r.presV.map((v) => (v.dec ? { ...v, dec: { ...v.dec, ip: undefined, ua: undefined } } : v)) };
+  };
   const p = url.pathname.split("/").filter(Boolean); // [api, ordenes|fotos, id?]
   if (!adm && !(await vigente(ses, t))) return json({ error: "No autorizado" }, 403); // una baja o un cambio de contraseña cortan el acceso aunque la cookie siga viva
   // El mecánico solo ve fotos que subió él o que pertenecen a una orden asignada a él
@@ -93,10 +98,10 @@ const handler = async (req) => {
       const o = todas.find((x) => CAMPOS.mat(x.mat) === mat);
       return json(o ? { marca: o.marca, modelo: o.modelo, anio: o.anio, cli: o.cli, tel: o.tel } : {});
     }
-    if (adm) return json(todas.map(pub));
+    if (adm) return json(todas.map(paraVer));
     // Mecánico: solo las matrículas que tiene ahora en su tablero (sin entregar) y el historial de esas matrículas
     const mats = new Set(todas.filter((o) => o.mec === ses.usuario && o.estado !== "Entregado").map((o) => o.mat));
-    return json(todas.filter((o) => mats.has(o.mat)).map(pub));
+    return json(todas.filter((o) => mats.has(o.mat)).map(paraVer));
   }
 
   if (req.method === "POST" && !p[2]) {
@@ -111,7 +116,7 @@ const handler = async (req) => {
     o.mod = o.creado; o.modPor = ses.usuario;
     o.hist = [{ estado: o.estado, fecha: o.creado, por: ses.usuario }]; // historial de estados (alimentará la línea de tiempo del cliente)
     await t.put("ordenes/" + o.id, o);
-    return json(pub(o), 201);
+    return json(paraVer(o), 201);
   }
 
   // Edición de una orden. El cliente manda `rev` (la versión que tenía en pantalla) y SOLO los campos que cambia.
@@ -138,13 +143,13 @@ const handler = async (req) => {
         if (cambiaPres || (n.vb === "ok" && o.vb !== "ok")) n.vb = n.vb === "ok" || n.vb === "pendiente" ? "pendiente" : "";
       }
       const cambios = Object.keys(n).filter((k) => JSON.stringify(n[k]) !== JSON.stringify(o[k] ?? POR_DEFECTO[k]));
-      if (!cambios.length) return { out: [200, pub(o)] };
+      if (!cambios.length) return { out: [200, paraVer(o)] };
       const fr = o.fr || {}, fp = o.fp || {};
       const choque = cambios.filter((k) => k !== "fotos" && (fr[k] || 0) > body.rev); // las fotos se fusionan, nunca chocan
       if (choque.length) {
         const quienes = [...new Set(choque.map((k) => fp[k]).filter((x) => x && x !== ses.usuario))];
         const quien = quienes.length ? ` (${quienes.join(", ")})` : "";
-        return { out: [409, { error: `Otra persona${quien} ha cambiado ${[...new Set(choque.map((k) => ETIQ[k]))].join(", ")} mientras lo editabas. Se ha cargado la versión actual: revísala y repite tu cambio.`, actual: pub(o) }] };
+        return { out: [409, { error: `Otra persona${quien} ha cambiado ${[...new Set(choque.map((k) => ETIQ[k]))].join(", ")} mientras lo editabas. Se ha cargado la versión actual: revísala y repite tu cambio.`, actual: paraVer(o) }] };
       }
       const v = (o.rev || 0) + 1, nuevo = { ...o, ...n, rev: v, fr: { ...fr, ...Object.fromEntries(cambios.map((k) => [k, v])) }, fp: { ...fp, ...Object.fromEntries(cambios.map((k) => [k, ses.usuario])) }, mod: Date.now(), modPor: ses.usuario };
       if (cambios.some((k) => DATOS.includes(k))) { // los datos de la entrada tienen que seguir siendo válidos tras la corrección
@@ -153,7 +158,7 @@ const handler = async (req) => {
       }
       if (cambios.includes("estado")) // órdenes anteriores a este cambio: se parte del estado que tenían (fecha aproximada)
         nuevo.hist = [...(o.hist ?? [{ estado: o.estado, fecha: o.creado, aprox: o.estado !== "Recibido" }]), { estado: n.estado, fecha: Date.now(), por: ses.usuario }].slice(-100);
-      return { write: nuevo, out: [200, pub(nuevo)] };
+      return { write: nuevo, out: [200, paraVer(nuevo)] };
     });
     return json(r[1], r[0]);
   }
@@ -193,18 +198,18 @@ const handler = async (req) => {
       const fr = o.fr || {}, fp = o.fp || {}, choque = ["pres", "vb"].filter((k) => (fr[k] || 0) > body.rev);
       if (choque.length) {
         const quienes = [...new Set(choque.map((k) => fp[k]).filter((x) => x && x !== ses.usuario))];
-        return { out: [409, { error: `Otra persona${quienes.length ? ` (${quienes.join(", ")})` : ""} ha cambiado ${[...new Set(choque.map((k) => ETIQ[k]))].join(" y ")} mientras lo mirabas. Se ha cargado la versión actual: revísala y vuelve a enviar.`, actual: pub(o) }] };
+        return { out: [409, { error: `Otra persona${quienes.length ? ` (${quienes.join(", ")})` : ""} ha cambiado ${[...new Set(choque.map((k) => ETIQ[k]))].join(" y ")} mientras lo mirabas. Se ha cargado la versión actual: revísala y vuelve a enviar.`, actual: paraVer(o) }] };
       }
       const lineas = (o.pres || []).map((l) => ({ c: l.c, t: l.t, i: l.i }));
       if (!lineas.length) return { out: [400, { error: "El presupuesto está vacío" }] };
       if (o.vb !== "ok") return { out: [400, { error: "El presupuesto aún no está cerrado ni aprobado" }] };
       const huella = sha(JSON.stringify(lineas.map((l) => [l.c, l.t, l.i]))), vs = o.presV || [], ult = vs[vs.length - 1];
-      if (ult && ult.huella === huella) return { out: [200, pub(o)] };
+      if (ult && ult.huella === huella) return { out: [200, paraVer(o)] };
       if (vs.length >= 20) return { out: [400, { error: "Demasiadas versiones enviadas de este presupuesto" }] };
       const base = lineas.reduce((a, l) => a + (+l.i || 0), 0), v = (o.rev || 0) + 1;
       const ver = { n: (ult?.n || 0) + 1, lineas, base: r2(base), iva: r2(base * 0.21), total: r2(base * 1.21), huella, enviada: Date.now(), por: ses.usuario };
       const nuevo = { ...o, presV: [...vs, ver], rev: v, fr: { ...fr, presV: v }, fp: { ...fp, presV: ses.usuario }, mod: Date.now(), modPor: ses.usuario };
-      return { write: nuevo, out: [200, pub(nuevo)] };
+      return { write: nuevo, out: [200, paraVer(nuevo)] };
     });
     return json(r[1], r[0]);
   }
