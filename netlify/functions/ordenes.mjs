@@ -1,16 +1,18 @@
 import { T } from "./_lib/store.mjs";
-import { exigir } from "./_lib/auth.mjs";
+import { exigir, vigente } from "./_lib/auth.mjs";
 
 export const config = { path: ["/api/ordenes", "/api/ordenes/*", "/api/fotos", "/api/fotos/*"] };
 const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
 const ESTADOS = ["Recibido", "Diagnóstico", "Esperando aprobación", "En reparación", "Listo", "Entregado"];
 const ID = /^[a-z0-9]{6,40}$/, s = (v, n = 200) => String(v ?? "").trim().slice(0, n);
 const arr = (v) => (Array.isArray(v) ? v : []);
+const num = (v, max) => Math.min(max, Math.max(0, Math.round(+v || 0)));
 
 // Solo se aceptan estos campos y con estos tipos
 const CAMPOS = {
-  mat: (v) => s(v, 12).toUpperCase().replace(/\s/g, ""), marca: (v) => s(v, 40), modelo: (v) => s(v, 40),
-  anio: (v) => +v || 0, km: (v) => +v || 0, cli: (v) => s(v, 80), tel: (v) => s(v, 25), otro: (v) => s(v, 120),
+  mat: (v) => s(v, 20).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12), // sin espacios ni guiones: "4821-klm" y "4821 KLM" son la misma matrícula
+  marca: (v) => s(v, 40), modelo: (v) => s(v, 40),
+  anio: (v) => num(v, 2100), km: (v) => num(v, 9999999), cli: (v) => s(v, 80), tel: (v) => s(v, 25), otro: (v) => s(v, 120),
   notas: (v) => s(v, 4000), mec: (v) => s(v, 30), foto: (v) => (ID.test(v) ? v : ""),
   mot: (v) => arr(v).map((x) => s(x, 60)).filter(Boolean).slice(0, 20),
   estado: (v) => (ESTADOS.includes(v) ? v : "Recibido"),
@@ -20,18 +22,40 @@ const CAMPOS = {
 };
 const limpia = (b, solo) => Object.fromEntries(Object.keys(CAMPOS).filter((k) => k in b && (!solo || solo.includes(k))).map((k) => [k, CAMPOS[k](b[k])]));
 const nuevoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const pub = ({ fr, fp, ...o }) => o; // `fr` (versión por campo) y `fp` (quién lo tocó) son internos
 
-const ALTA = ["mat", "marca", "modelo", "anio", "km", "cli", "tel", "otro", "mot", "foto", "mec"];
+// Datos de la entrada: los puede corregir el admin y el mecánico asignado
+const DATOS = ["mat", "marca", "modelo", "anio", "km", "cli", "tel", "otro", "mot"];
+const ALTA = [...DATOS, "foto", "mec"];
+const EDIT_ADMIN = [...DATOS, "estado", "mec", "notas", "pres", "vb", "fotos"];
+const EDIT_MEC = [...DATOS, "estado", "notas", "pres", "vb", "fotos"];
+const ETIQ = { mat: "la matrícula", marca: "la marca", modelo: "el modelo", anio: "el año", km: "los kilómetros", cli: "el cliente", tel: "el teléfono", otro: "el motivo", mot: "el motivo",
+  estado: "el estado", mec: "el mecánico", notas: "las notas", pres: "el presupuesto", vb: "el visto bueno", fotos: "las fotos" };
+
+// Validación de los datos de la entrada (valores ya limpiados). `ks` = solo esos campos (al editar); sin `ks`, todos (al crear).
+const errorDatos = (o, ks = DATOS) => {
+  const h = (k) => ks.includes(k);
+  if (h("mat") && o.mat.length < 3) return "La matrícula no es válida";
+  if (h("marca") && !o.marca) return "Falta la marca";
+  if (h("cli") && !o.cli) return "Falta el cliente";
+  if (h("tel") && ((o.tel.match(/\d/g) || []).length < 6 || !/^[\d\s+().-]+$/.test(o.tel))) return "El teléfono no es válido";
+  if (h("anio") && o.anio && (o.anio < 1900 || o.anio > 2100)) return "El año no es válido";
+  if ((h("mot") || h("otro")) && !o.mot.length && !o.otro) return "Elige al menos un motivo";
+  return "";
+};
+const POR_DEFECTO = { mat: "", marca: "", modelo: "", anio: 0, km: 0, cli: "", tel: "", otro: "", notas: "", mec: "", vb: "", estado: "Recibido", mot: [], fotos: [], pres: [] };
 
 export default async (req) => {
+  try { return await handler(req); }
+  catch (e) { console.error(e); return json({ error: "Error del servidor: " + (e?.message || e) }, 500); }
+};
+
+const handler = async (req) => {
   const ses = exigir(req); // admin o mecánico
   if (!ses) return json({ error: "No autorizado" }, 403);
   const adm = ses.rol === "admin", t = T("main"), url = new URL(req.url);
   const p = url.pathname.split("/").filter(Boolean); // [api, ordenes|fotos, id?]
-  if (!adm) { // una baja corta el acceso aunque la cookie siga viva
-    const u = await t.get("usuarios/" + ses.usuario);
-    if (!u || u.activo === false) return json({ error: "No autorizado" }, 403);
-  }
+  if (!adm && !(await vigente(ses, t))) return json({ error: "No autorizado" }, 403); // una baja o un cambio de contraseña cortan el acceso aunque la cookie siga viva
   // El mecánico solo ve fotos que subió él o que pertenecen a una orden asignada a él
   const puedeVer = async (id) => {
     const m = await t.get("fotosmeta/" + id);
@@ -65,44 +89,69 @@ export default async (req) => {
     const todas = (await Promise.all((await t.list("ordenes/")).map((k) => t.get(k)))).filter(Boolean).sort((a, b) => b.creado - a.creado);
     const mat = CAMPOS.mat(url.searchParams.get("mat") || "");
     if (mat) { // autorrelleno al dar de alta un coche que ya ha venido
-      const o = todas.find((x) => x.mat === mat);
+      const o = todas.find((x) => CAMPOS.mat(x.mat) === mat);
       return json(o ? { marca: o.marca, modelo: o.modelo, anio: o.anio, cli: o.cli, tel: o.tel } : {});
     }
-    if (adm) return json(todas);
+    if (adm) return json(todas.map(pub));
     // Mecánico: solo las matrículas que tiene ahora en su tablero (sin entregar) y el historial de esas matrículas
     const mats = new Set(todas.filter((o) => o.mec === ses.usuario && o.estado !== "Entregado").map((o) => o.mat));
-    return json(todas.filter((o) => mats.has(o.mat)));
+    return json(todas.filter((o) => mats.has(o.mat)).map(pub));
   }
+
   if (req.method === "POST" && !p[2]) {
     // El mecánico solo da de alta el vehículo, y queda asignado a él
     const datos = adm ? body : { ...body, mec: ses.usuario };
-    const o = { estado: "Recibido", mec: "", notas: "", fotos: [], pres: [], vb: "", foto: "", otro: "", mot: [], ...limpia(datos, adm ? undefined : ALTA) };
+    const o = { estado: "Recibido", mec: "", notas: "", fotos: [], pres: [], vb: "", foto: "", otro: "", mot: [], anio: 0, km: 0, tel: "", cli: "", ...limpia(datos, adm ? undefined : ALTA) };
     if (!adm && o.foto && (await t.get("fotosmeta/" + o.foto))?.por !== ses.usuario) o.foto = ""; // no puede usar fotos ajenas
-    if (!o.mat || !o.marca || (!o.mot.length && !o.otro)) return json({ error: "Faltan datos de la entrada" }, 400);
-    o.id = nuevoId(); o.creado = Date.now();
+    const err = errorDatos(o);
+    if (err) return json({ error: err }, 400);
+    o.id = nuevoId(); o.creado = Date.now(); o.rev = 1;
     o.fecha = new Date().toLocaleDateString("es-ES", { timeZone: "Europe/Madrid" });
+    o.mod = o.creado; o.modPor = ses.usuario;
     await t.put("ordenes/" + o.id, o);
-    return json(o, 201);
+    return json(pub(o), 201);
   }
+
+  // Edición de una orden. El cliente manda `rev` (la versión que tenía en pantalla) y SOLO los campos que cambia.
+  //  · Cada campo recuerda en qué versión se tocó por última vez (`fr`). Si alguien lo cambió después de la `rev` del cliente → 409
+  //    y se devuelve la orden actual; si han tocado otros campos distintos, no hay conflicto y se fusiona.
+  //  · La escritura es condicional (ETag): si otro guarda a la vez, se vuelve a leer y a comprobar (nunca se pisa en silencio).
+  //  · Las fotos se fusionan (unión): dos personas subiendo fotos a la vez no se quitan ninguna.
   if (req.method === "PUT" && ID.test(p[2] || "")) {
-    const o = await t.get("ordenes/" + p[2]);
-    if (!o) return json({ error: "No existe" }, 404);
-    if (!adm && o.mec !== ses.usuario) return json({ error: "No autorizado" }, 403);
-    const c = limpia(body, adm ? ["estado", "mec", "notas", "pres", "vb", "fotos"] : ["estado", "notas", "pres", "vb", "fotos"]);
-    if (!adm && c.fotos) { // solo puede añadir fotos que subió él
-      for (const id of c.fotos.filter((x) => !(o.fotos || []).includes(x)))
-        if ((await t.get("fotosmeta/" + id))?.por !== ses.usuario) return json({ error: "Foto no válida" }, 403);
-    }
-    if (!adm) { // sin permiso, el mecánico no puede cerrar ni dejar aprobado un presupuesto por su cuenta
-      const aj = { vistoBuenoActivo: false, ...(await t.get("ajustes")) }, u = await t.get("usuarios/" + ses.usuario);
-      if (aj.vistoBuenoActivo && !u?.libre) {
-        const cambiaPres = c.pres && JSON.stringify(c.pres) !== JSON.stringify(o.pres);
-        if (cambiaPres || (c.vb === "ok" && o.vb !== "ok")) c.vb = c.vb === "ok" || c.vb === "pendiente" ? "pendiente" : "";
+    if (!Number.isInteger(body.rev) || body.rev < 0) return json({ error: "Falta la versión de la orden. Recarga la página." }, 400);
+    const c = limpia(body, adm ? EDIT_ADMIN : EDIT_MEC);
+    if ("estado" in c && !ESTADOS.includes(body.estado)) return json({ error: "Estado no válido" }, 400);
+    const aj = adm ? null : { vistoBuenoActivo: false, ...(await t.get("ajustes")) }, u = adm ? null : await t.get("usuarios/" + ses.usuario);
+    const r = await t.mutate("ordenes/" + p[2], async (o) => {
+      if (!o) return { out: [404, { error: "No existe" }] };
+      if (!adm && o.mec !== ses.usuario) return { out: [403, { error: "No autorizado" }] };
+      const n = { ...c };
+      if (!adm && n.fotos) { // solo puede añadir fotos que subió él
+        for (const id of n.fotos.filter((x) => !(o.fotos || []).includes(x)))
+          if ((await t.get("fotosmeta/" + id))?.por !== ses.usuario) return { out: [403, { error: "Foto no válida" }] };
       }
-    }
-    Object.assign(o, c);
-    await t.put("ordenes/" + o.id, o);
-    return json(o);
+      if (n.fotos) n.fotos = [...new Set([...(o.fotos || []), ...n.fotos])].slice(0, 40);
+      if (!adm && aj.vistoBuenoActivo && !u?.libre) { // sin permiso, el mecánico no puede cerrar ni dejar aprobado un presupuesto por su cuenta
+        const cambiaPres = n.pres && JSON.stringify(n.pres) !== JSON.stringify(o.pres);
+        if (cambiaPres || (n.vb === "ok" && o.vb !== "ok")) n.vb = n.vb === "ok" || n.vb === "pendiente" ? "pendiente" : "";
+      }
+      const cambios = Object.keys(n).filter((k) => JSON.stringify(n[k]) !== JSON.stringify(o[k] ?? POR_DEFECTO[k]));
+      if (!cambios.length) return { out: [200, pub(o)] };
+      const fr = o.fr || {}, fp = o.fp || {};
+      const choque = cambios.filter((k) => k !== "fotos" && (fr[k] || 0) > body.rev); // las fotos se fusionan, nunca chocan
+      if (choque.length) {
+        const quienes = [...new Set(choque.map((k) => fp[k]).filter((x) => x && x !== ses.usuario))];
+        const quien = quienes.length ? ` (${quienes.join(", ")})` : "";
+        return { out: [409, { error: `Otra persona${quien} ha cambiado ${[...new Set(choque.map((k) => ETIQ[k]))].join(", ")} mientras lo editabas. Se ha cargado la versión actual: revísala y repite tu cambio.`, actual: pub(o) }] };
+      }
+      const v = (o.rev || 0) + 1, nuevo = { ...o, ...n, rev: v, fr: { ...fr, ...Object.fromEntries(cambios.map((k) => [k, v])) }, fp: { ...fp, ...Object.fromEntries(cambios.map((k) => [k, ses.usuario])) }, mod: Date.now(), modPor: ses.usuario };
+      if (cambios.some((k) => DATOS.includes(k))) { // los datos de la entrada tienen que seguir siendo válidos tras la corrección
+        const err = errorDatos(nuevo, cambios.filter((k) => DATOS.includes(k)));
+        if (err) return { out: [400, { error: err }] };
+      }
+      return { write: nuevo, out: [200, pub(nuevo)] };
+    });
+    return json(r[1], r[0]);
   }
   return json({ error: "No encontrado" }, 404);
 };
