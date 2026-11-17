@@ -39,7 +39,8 @@ dialog{border:0;border-radius:14px;padding:0;width:min(720px,100%);max-height:92
 .fb{padding:4px 16px 18px}.fb h2{font-size:1.1rem;margin:18px 0 6px}
 .fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;margin-top:8px}.fotos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px}
 table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left;font-size:.92rem}td:last-child,th:last-child{text-align:right}
-.tot{text-align:right;margin-top:8px}.ok{color:var(--ok);font-weight:600}.mute{color:var(--mute)}
+.tot{text-align:right;margin-top:8px}.ok{color:var(--ok);font-weight:600}
+.vbp{color:#b45309;font-weight:600}.mute{color:var(--mute)}
 .hist{padding:8px 0;border-bottom:1px solid var(--line);font-size:.92rem}
 .chip{font-size:.75rem;font-weight:600;padding:2px 8px;border-radius:10px;background:#e3e8f1;color:var(--mute)}.chip.fin{background:#d9f2e4;color:var(--ok)}
 .vis{display:flex;gap:4px 10px;flex-wrap:wrap;align-items:center;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:9px 2px;cursor:pointer;font:inherit;color:inherit}.vis:hover{background:#f3f6fb}
@@ -76,7 +77,11 @@ const nMat=s=>String(s??"").toUpperCase().replace(/[^A-Z0-9]/g,"");
 /* 1. TABLERO: solo mis vehículos en el taller */
 const mios=()=>OS.filter(o=>o.mec===YO.usuario&&o.estado!=="Entregado");
 const sig=o=>ESTADOS[ESTADOS.indexOf(o.estado)+1];
-const tarjeta=o=>`<article class="tj" draggable="true" ondragstart="event.dataTransfer.setData('t','${o.id}')" onclick="abrir('${o.id}')">${o.foto?`<img src="${src(o.foto)}" alt="">`:`<div class="sf">Sin foto</div>`}<div><span class="mat">${esc(o.mat)}</span><div>${esc(o.marca)} ${esc(o.modelo)}</div><small>${esc(mots(o))}</small><button class="btn sm" aria-label="Pasar a ${esc(sig(o))}" onclick="event.stopPropagation();poner('${o.id}','${esc(sig(o))}')">${sig(o)=="Entregado"?"Entregar":"Avanzar ›"}</button></div></article>`;
+/* Respuesta del cliente al presupuesto (la IP y el navegador solo les llegan al admin) */
+const decBadge=o=>{const d=(o.presV||[]).at(-1)?.dec;return d?`<small class="${d.resultado=="aprobado"?"ok":"vbp"}">Cliente ${d.resultado=="aprobado"?"aprobó":"rechazó"} el presupuesto</small>`:""};
+const decTxt=v=>{const d=v?.dec;if(!d)return"";const ok=d.resultado=="aprobado",f=new Date(d.fecha).toLocaleString("es-ES",{timeZone:"Europe/Madrid",dateStyle:"short",timeStyle:"short"});
+ return `<p class="${ok?"ok":"vbp"}" style="margin:0 0 8px">${ok?"✓ El cliente aprobó":"✕ El cliente rechazó"} la v${v.n} · ${f}</p>${d.mensaje?`<p style="margin:0 0 8px">«${esc(d.mensaje)}»</p>`:""}${d.ip?`<p class="mute" style="font-size:.82rem;margin:0 0 8px">Constancia: IP ${esc(d.ip)} · ${esc(d.ua||"navegador desconocido")} · huella ${esc(String(d.huella||"").slice(0,12))}</p>`:""}`};
+const tarjeta=o=>`<article class="tj" draggable="true" ondragstart="event.dataTransfer.setData('t','${o.id}')" onclick="abrir('${o.id}')">${o.foto?`<img src="${src(o.foto)}" alt="">`:`<div class="sf">Sin foto</div>`}<div><span class="mat">${esc(o.mat)}</span><div>${esc(o.marca)} ${esc(o.modelo)}</div><small>${esc(mots(o))}</small>${decBadge(o)}<button class="btn sm" aria-label="Pasar a ${esc(sig(o))}" onclick="event.stopPropagation();poner('${o.id}','${esc(sig(o))}')">${sig(o)=="Entregado"?"Entregar":"Avanzar ›"}</button></div></article>`;
 function tablero(){const os=mios();
  $("#v").innerHTML=`<div class="board">`+ESTADOS.map(e=>{const l=os.filter(o=>o.estado==e);
  return `<section class="col" ondragover="event.preventDefault()" ondrop="soltar(event,'${e}')"><h2>${e}<span>${e=="Entregado"?"":l.length}</span></h2>${e=="Entregado"?'<p class="vac">Suelta aquí el coche al entregarlo. Sale del tablero y queda en su historial.</p>':l.map(tarjeta).join("")||'<p class="vac">Sin vehículos</p>'}</section>`}).join("")+`</div>`+(os.length?"":'<p class="mute" style="margin-top:12px">Aún no tienes vehículos. Da de alta uno en «Nueva entrada».</p>')}
@@ -184,8 +189,8 @@ async function pintaCliente(){const o=cur,b=$("#cl-blk");if(!b)return;
  let e={};try{e=await api(`ordenes/${o.id}/enlace`)}catch(x){}
  if(cur!==o||!$("#cl-blk"))return;
  const hay=!!(e.activo||e.caducado);
- $("#cl-blk").innerHTML=`<div class="cl"><p style="margin:0 0 8px"><b>Presupuesto:</b> ${v?`enviado v${v.n} · ${fechaC(v.enviada)} · ${eur(v.total)}${sin?' <span class="vbp">Hay cambios sin enviar</span>':""}`:'<span class="mute">aún no se ha enviado</span>'}</p>
- <button class="btn" ${puede?"":"disabled"} onclick="enviarPres()">Enviar presupuesto al cliente</button>${puede?"":`<span class="mute" style="margin-left:8px;font-size:.88rem">${!o.pres.length?"Añade líneas al presupuesto.":o.vb!="ok"?"Cierra o aprueba el presupuesto primero.":"Ya está enviado."}</span>`}
+ $("#cl-blk").innerHTML=`<div class="cl"><p style="margin:0 0 8px"><b>Presupuesto:</b> ${v?`enviado v${v.n} · ${fechaC(v.enviada)} · ${eur(v.total)}${sin?' <span class="vbp">Hay cambios sin enviar</span>':""}`:'<span class="mute">aún no se ha enviado</span>'}</p>${decTxt(v)}
+ <button class="btn" ${puede?"":"disabled"} onclick="enviarPres()">Enviar presupuesto al cliente</button>${puede?"":`<span class="mute" style="margin-left:8px;font-size:.88rem">${!o.pres.length?"Añade líneas al presupuesto.":o.vb!="ok"?"Cierra o aprueba el presupuesto primero.":v?.dec?.resultado=="rechazado"?"El cliente lo rechazó: modifica el presupuesto para poder enviar una versión nueva.":"Ya está enviado."}</span>`}
  <p style="margin:16px 0 8px"><b>Enlace del cliente:</b> ${e.activo?`activo hasta el ${fechaC(e.exp)}`:e.caducado?"caducado":'<span class="mute">sin generar</span>'}</p>
  <button class="btn sec" onclick="genEnlace(${hay})">${hay?"Generar uno nuevo":"Generar enlace"}</button>${e.activo?' <button class="btn sec" onclick="anulaEnlace()">Anular</button>':""}
  ${ENL&&ENL.id==o.id?`<div class="enl"><input id="enl-url" readonly value="${esc(ENL.url)}" onclick="this.select()"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn" onclick="copiaEnlace()">Copiar enlace</button><a class="btn sec" style="text-decoration:none" target="_blank" rel="noopener" href="${esc(ENL.wa)}">Enviar por WhatsApp</a></div><p class="mute" style="font-size:.85rem;margin:8px 0 0">Cópialo ahora: no se vuelve a mostrar. Si lo pierdes, genera uno nuevo (el anterior dejará de funcionar).</p></div>`:""}</div>`}
