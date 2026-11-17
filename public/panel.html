@@ -52,6 +52,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1p
 .chip.fin{background:#d9f2e4;color:var(--ok)}
 .vis{display:flex;gap:4px 10px;flex-wrap:wrap;align-items:center;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:9px 2px;cursor:pointer;font:inherit;color:inherit}.vis:hover{background:#f3f6fb}
 .gr{margin-top:14px}.gr .cab{margin-bottom:6px}.sm{padding:4px 10px;font-size:.85rem}.btn:disabled{opacity:.6;cursor:wait}
+.cl{border:1px solid var(--line);border-radius:10px;padding:14px}.enl{margin-top:12px;background:var(--paper);padding:12px;border-radius:8px}.enl input{width:100%}.btn[disabled]{opacity:.5;cursor:not-allowed}
 </style></head>
 <body>
 <header class="top"><span class="brand">Taller <b>AppXpand</b></span><nav id="nav"></nav>
@@ -159,8 +160,9 @@ function ficha(){const o=cur,a=adm(),libre=a||yo().libre||!D.vb,hist=D.ordenes.f
  <h2>Presupuesto</h2><table><tr><th>Concepto</th><th>Tipo</th><th>Importe</th></tr>${o.pres.map((l,i)=>`<tr><td>${esc(l.c)}</td><td>${esc(l.t)}</td><td>${eur(+l.i)} <button class="btn sec" style="padding:2px 8px" onclick="quitar(${i})" aria-label="Quitar línea">×</button></td></tr>`).join("")||'<tr><td colspan="3" class="mute">Añade la primera línea</td></tr>'}</table>
  <div class="grid" style="grid-template-columns:2fr 1.2fr 1fr auto;align-items:end;gap:8px"><div><label>Concepto</label><input id="p-c"></div><div><label>Tipo</label><select id="p-t"><option>Mano de obra</option><option>Pieza</option></select></div><div><label>Importe (€)</label><input id="p-i" type="number" min="0" step="0.01"></div><button class="btn" onclick="linea()">Añadir</button></div>
  <div class="tot">Base ${eur(tot(o))} · IVA 21 % ${eur(tot(o)*.21)} · <b>Total ${eur(tot(o)*1.21)}</b></div><p style="text-align:right">${vb}</p>
+ <h2>Cliente</h2><div id="cl-blk"></div>
  <h2>Historial de este coche</h2>${hist.map(x=>`<div class="hist"><b>${esc(x.fecha)}</b> · ${esc(mots(x))} · ${esc(x.estado)} · ${eur(tot(x)*1.21)}<div class="mute">${esc(x.notas)}</div></div>`).join("")||'<p class="mute">Primera visita registrada.</p>'}${o.mod?`<p class="mute" style="font-size:.82rem;margin-top:18px">Última modificación: ${fechaHora(o.mod)} · ${esc(D.equipo.find(x=>x.u==o.modPor)?.n||o.modPor)}</p>`:""}</div>`;
- if(!$("#fd").open)$("#fd").showModal()}
+ if(!$("#fd").open)$("#fd").showModal();pintaCliente()}
 async function fotos(i){for(const f of i.files){try{const id=await subir(await comprime(f));cur.fotos.push(id)}catch(x){alert(x.message)}}await save(cur,["fotos"]);ficha()}
 function linea(){const c=$("#p-c").value.trim(),i=$("#p-i").value;if(!c||i==="")return;edita(["pres","vb"],o=>{o.pres.push({c,t:$("#p-t").value,i:+i});o.vb=""})}
 function quitar(i){edita(["pres","vb"],o=>{o.pres.splice(i,1);o.vb=""})}
@@ -173,6 +175,29 @@ function aprobar(){const l=pend();
 async function decidir(id,v){const o=D.ordenes.find(x=>x.id==id);if(!o)return;const ant=o.vb;o.vb=v;
  if(await save(o,["vb"])==0)o.vb=ant; // si el mecánico cambió el presupuesto después de que lo vieras, no se aprueba: se recarga la versión nueva
  pintar()}
+/* CLIENTE: enviar el presupuesto (versión congelada) y dar el enlace del portal. El enlace se muestra una sola vez al generarlo. */
+let ENL=null;
+const fechaC=t=>new Date(t).toLocaleDateString("es-ES",{timeZone:"Europe/Madrid"});
+const linPres=l=>JSON.stringify((l||[]).map(x=>[x.c,x.t,+x.i]));
+const mismoPres=o=>{const v=(o.presV||[]).at(-1);return !!v&&linPres(v.lineas)===linPres(o.pres)};
+async function pintaCliente(){const o=cur,b=$("#cl-blk");if(!b)return;
+ if(typeof API!=="undefined"&&!API){b.innerHTML='<p class="mute">Sin conexión con el servidor: modo demostración.</p>';return}
+ const v=(o.presV||[]).at(-1),sin=!mismoPres(o),puede=o.vb=="ok"&&o.pres.length>0&&sin;
+ let e={};try{e=await api(`ordenes/${o.id}/enlace`)}catch(x){}
+ if(cur!==o||!$("#cl-blk"))return;
+ const hay=!!(e.activo||e.caducado);
+ $("#cl-blk").innerHTML=`<div class="cl"><p style="margin:0 0 8px"><b>Presupuesto:</b> ${v?`enviado v${v.n} · ${fechaC(v.enviada)} · ${eur(v.total)}${sin?' <span class="vbp">Hay cambios sin enviar</span>':""}`:'<span class="mute">aún no se ha enviado</span>'}</p>
+ <button class="btn" ${puede?"":"disabled"} onclick="enviarPres()">Enviar presupuesto al cliente</button>${puede?"":`<span class="mute" style="margin-left:8px;font-size:.88rem">${!o.pres.length?"Añade líneas al presupuesto.":o.vb!="ok"?"Cierra o aprueba el presupuesto primero.":"Ya está enviado."}</span>`}
+ <p style="margin:16px 0 8px"><b>Enlace del cliente:</b> ${e.activo?`activo hasta el ${fechaC(e.exp)}`:e.caducado?"caducado":'<span class="mute">sin generar</span>'}</p>
+ <button class="btn sec" onclick="genEnlace(${hay})">${hay?"Generar uno nuevo":"Generar enlace"}</button>${e.activo?' <button class="btn sec" onclick="anulaEnlace()">Anular</button>':""}
+ ${ENL&&ENL.id==o.id?`<div class="enl"><input id="enl-url" readonly value="${esc(ENL.url)}" onclick="this.select()"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn" onclick="copiaEnlace()">Copiar enlace</button><a class="btn sec" style="text-decoration:none" target="_blank" rel="noopener" href="${esc(ENL.wa)}">Enviar por WhatsApp</a></div><p class="mute" style="font-size:.85rem;margin:8px 0 0">Cópialo ahora: no se vuelve a mostrar. Si lo pierdes, genera uno nuevo (el anterior dejará de funcionar).</p></div>`:""}</div>`}
+async function enviarPres(){const o=cur;try{Object.assign(o,await api(`ordenes/${o.id}/presupuesto`,"POST",{rev:o.rev||0}));ficha()}catch(x){if(x.actual){Object.assign(o,x.actual);alert(x.message);ficha()}else alert(x.message)}}
+async function genEnlace(hay){if(hay&&!confirm("Generar uno nuevo anula el enlace actual: el cliente tendrá que usar el nuevo. ¿Continuar?"))return;const o=cur;
+ try{const r=await api(`ordenes/${o.id}/enlace`,"POST",{}),url=location.origin+"/cliente.html#"+r.token;
+  ENL={id:o.id,url,wa:"https://wa.me/?text="+encodeURIComponent(`Hola${o.cli?" "+o.cli.split(" ")[0]:""}, aquí puedes ver el estado de tu ${o.marca} ${o.modelo} y su presupuesto: ${url}`)};pintaCliente()}catch(x){alert(x.message)}}
+async function anulaEnlace(){if(!confirm("¿Anular el enlace? El cliente dejará de poder verlo."))return;try{await api(`ordenes/${cur.id}/enlace`,"POST",{accion:"revocar"});ENL=null;pintaCliente()}catch(x){alert(x.message)}}
+function copiaEnlace(){const i=$("#enl-url");i.select();(navigator.clipboard?navigator.clipboard.writeText(i.value):Promise.reject()).catch(()=>document.execCommand("copy"))}
+$("#fd").addEventListener("close",()=>{ENL=null});
 $("#fd").addEventListener("close",pintar);
 /* API (si no hay servidor, la página sigue en modo demostración) */
 let EQ=[],API=false;
