@@ -23,25 +23,33 @@ input:focus-visible,button:focus-visible{outline:3px solid #8fb0ff;outline-offse
 <label for="u">Usuario</label><input type="text" id="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
 <label for="p">Contraseña</label><input type="password" id="p" autocomplete="current-password" autocapitalize="none" autocorrect="off" required>
 <label class="chk"><input type="checkbox" id="k"> Mantener sesión en este dispositivo</label>
-<button class="btn">Entrar</button><button type="button" class="lnk" id="ir-alta">Tengo un código de alta</button></form>
+<button class="btn">Entrar</button><button type="button" class="lnk" id="ir-alta">Tengo un código de alta</button><button type="button" class="lnk" id="ir-olvido">He olvidado mi contraseña</button></form>
 <form id="a" class="hide" autocomplete="off"><h1>Activa tu cuenta</h1><p>Usa el código que te ha dado tu taller.</p>
 <label for="ac">Código de alta</label><input type="text" id="ac" class="plate" maxlength="10" required placeholder="A1B2C3D4E5">
 <label for="au">Elige un usuario</label><input type="text" id="au" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
 <label for="ap">Crea una contraseña (mínimo 8 caracteres)</label><input type="password" id="ap" autocomplete="new-password" minlength="8" required>
 <button class="btn">Crear mi cuenta</button><button type="button" class="lnk" id="ir-login">Volver a entrar</button></form>
+<form id="r" class="hide" autocomplete="off"><h1>Nueva contraseña</h1><p>Pide a tu taller un código de restablecimiento y escríbelo aquí. Vale 24 horas y una sola vez.</p>
+<label for="ru">Tu usuario</label><input type="text" id="ru" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+<label for="rc">Código de restablecimiento</label><input type="text" id="rc" class="plate" maxlength="10" required placeholder="A1B2C3D4E5">
+<label for="rp">Contraseña nueva (mínimo 8 caracteres)</label><input type="password" id="rp" autocomplete="new-password" minlength="8" maxlength="200" required>
+<button class="btn">Cambiar contraseña</button><button type="button" class="lnk" id="ir-login2">Volver a entrar</button></form>
 <div id="m" role="status" aria-live="polite"></div></div></div>
 <script>
 const $=i=>document.getElementById(i),msg=(t,ok)=>{$("m").textContent=t||"";$("m").className=ok?"ok":""};
 const post=(r,b)=>fetch("/api/auth/"+r,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b)});
 const err=async r=>(await r.json().catch(()=>({}))).error||"Algo ha fallado. Inténtalo de nuevo.";
 const dest=rol=>location.href=rol=="admin"?"/panel.html":"/mecanico.html";
-const vista=a=>{$("f").classList.toggle("hide",a);$("a").classList.toggle("hide",!a);msg("")};
-$("ir-alta").onclick=()=>vista(true);$("ir-login").onclick=()=>vista(false);
+const vista=v=>{$("f").classList.toggle("hide",v!="f");$("a").classList.toggle("hide",v!="a");$("r").classList.toggle("hide",v!="r");msg("")};
+$("ir-alta").onclick=()=>vista("a");$("ir-login").onclick=()=>vista("f");$("ir-olvido").onclick=()=>{$("ru").value=$("u").value;vista("r")};$("ir-login2").onclick=()=>vista("f");
 fetch("/api/auth/yo").then(async r=>{if(r.ok)dest((await r.json()).rol)}).catch(()=>{});
 $("f").onsubmit=async e=>{e.preventDefault();msg("Entrando…");
  const r=await post("login",{usuario:$("u").value,password:$("p").value,mantener:$("k").checked});
  r.ok?dest((await r.json()).rol):msg(await err(r))};
 $("a").onsubmit=async e=>{e.preventDefault();msg("Creando tu cuenta…");
  const r=await post("activar",{codigo:$("ac").value,usuario:$("au").value,password:$("ap").value});
- if(r.ok){$("u").value=$("au").value;$("p").value="";vista(false);msg("Cuenta creada. Ya puedes entrar.",true);$("p").focus()}else msg(await err(r))};
+ if(r.ok){$("u").value=$("au").value;$("p").value="";vista("f");msg("Cuenta creada. Ya puedes entrar.",true);$("p").focus()}else msg(await err(r))};
+$("r").onsubmit=async e=>{e.preventDefault();msg("Cambiando la contraseña…");
+ const r=await post("restablecer",{usuario:$("ru").value,codigo:$("rc").value,password:$("rp").value});
+ if(r.ok){$("u").value=$("ru").value;$("p").value="";$("rc").value="";$("rp").value="";vista("f");msg("Contraseña cambiada. Ya puedes entrar con la nueva.",true);$("p").focus()}else msg(await err(r))};
 </script></body></html>

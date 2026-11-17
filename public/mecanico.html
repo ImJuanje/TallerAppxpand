@@ -41,6 +41,9 @@ dialog{border:0;border-radius:14px;padding:0;width:min(720px,100%);max-height:92
 table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left;font-size:.92rem}td:last-child,th:last-child{text-align:right}
 .tot{text-align:right;margin-top:8px}.ok{color:var(--ok);font-weight:600}.mute{color:var(--mute)}
 .hist{padding:8px 0;border-bottom:1px solid var(--line);font-size:.92rem}
+.chip{font-size:.75rem;font-weight:600;padding:2px 8px;border-radius:10px;background:#e3e8f1;color:var(--mute)}.chip.fin{background:#d9f2e4;color:var(--ok)}
+.vis{display:flex;gap:4px 10px;flex-wrap:wrap;align-items:center;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:9px 2px;cursor:pointer;font:inherit;color:inherit}.vis:hover{background:#f3f6fb}
+.gr{margin-top:14px}.gr .cab{margin-bottom:6px}.sm{padding:4px 10px;font-size:.85rem}
 .pl{display:grid;grid-template-columns:2fr 1.2fr 1fr auto;gap:8px;align-items:end}
 @media(max-width:560px){.pl{grid-template-columns:1fr 1fr}.pl>:first-child{grid-column:1/-1}.pl .btn{grid-column:1/-1}}
 </style></head>
@@ -58,14 +61,16 @@ let YO={},VB=false,MOT=[],OS=[],vista="tablero",cur=null,fotoTmp="";
 
 const api=async(r,m="GET",b)=>{const x=await fetch("/api/"+r,{method:m,headers:{"content-type":"application/json"},body:b?JSON.stringify(b):undefined});
  const j=await x.json().catch(()=>({}));if(x.status==401||x.status==403){location.href="/";throw new Error("Sesión caducada")}
- if(!x.ok)throw new Error(j.error||"Algo ha fallado");return j};
+ if(!x.ok){const e=new Error(j.error||"Algo ha fallado");e.actual=j.actual;throw e}return j};
 async function cargar(){const[y,a,os]=await Promise.all([api("auth/yo"),api("ajustes"),api("ordenes")]);
  if(y.rol=="admin"){location.href="/panel.html";return false}
  YO=y;VB=a.vistoBuenoActivo;MOT=a.motivos;OS=os;$("#yo").textContent=y.nombre||y.usuario;return true}
 async function salir(){await fetch("/api/auth/logout",{method:"POST"});location.href="/"}
-const NAVS=[["tablero","Tablero"],["entrada","Nueva entrada"]];
+const NAVS=[["tablero","Tablero"],["buscar","Buscar"],["entrada","Nueva entrada"]];
 const ir=v=>{vista=v;pintar()};
-function pintar(){$("#nav").innerHTML=NAVS.map(([k,t])=>`<button class="${vista==k?"on":""}" onclick="ir('${k}')">${t}</button>`).join("");({tablero,entrada})[vista]()}
+function pintar(){$("#nav").innerHTML=NAVS.map(([k,t])=>`<button class="${vista==k?"on":""}" onclick="ir('${k}')">${t}</button>`).join("");({tablero,buscar,entrada})[vista]()}
+const fechaHora=t=>new Date(t).toLocaleString("es-ES",{timeZone:"Europe/Madrid",dateStyle:"short",timeStyle:"short"});
+const nMat=s=>String(s??"").toUpperCase().replace(/[^A-Z0-9]/g,"");
 
 /* 1. TABLERO: solo mis vehículos en el taller */
 const mios=()=>OS.filter(o=>o.mec===YO.usuario&&o.estado!=="Entregado");
@@ -78,7 +83,23 @@ function soltar(ev,e){ev.preventDefault();poner(ev.dataTransfer.getData("t"),e)}
 async function poner(id,e){const o=OS.find(x=>x.id==id);if(!o||o.estado===e)return;
  if(e==="Entregado"&&!confirm(`¿Marcar ${o.mat} como entregado?`))return;
  const ant=o.estado;o.estado=e;tablero();
- try{await api("ordenes/"+o.id,"PUT",{estado:e})}catch(x){o.estado=ant;tablero();alert("No se ha podido guardar: "+x.message)}}
+ if(await save(o,["estado"])==0)o.estado=ant;
+ if(vista=="tablero")tablero()}
+
+/* BUSCADOR: matrícula, cliente, teléfono o modelo. Solo ve lo que el servidor le deja ver a este mecánico (sus coches y su historial). */
+const norm=s=>String(s??"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""),nTxt=s=>norm(s).replace(/\s+/g," ").trim(),nClave=s=>norm(s).replace(/[^a-z0-9]/g,"");
+const coincide=(o,q)=>{const hay=nTxt([o.mat,o.cli,o.tel,o.marca,o.modelo,o.otro].join(" ")),m=nClave(o.mat),t=nClave(o.tel);
+ return nTxt(q).split(" ").filter(Boolean).every(w=>{const c=nClave(w);return hay.includes(w)||(c&&(m.includes(c)||t.includes(c)))})};
+let BQ="";
+function buscar(){$("#v").innerHTML=`<div class="card"><h1>Buscar</h1><label for="q">Matrícula, cliente, teléfono o modelo</label><input id="q" type="search" value="${esc(BQ)}" placeholder="Ej.: 4821KLM o Ana Ruiz" autocomplete="off" autocapitalize="none" oninput="BQ=this.value;resultados()"><div id="res"></div></div>`;resultados()}
+function resultados(){const box=$("#res");if(!box)return;const q=BQ.trim();
+ if(!q){box.innerHTML='<p class="mute" style="margin-top:12px">Escribe para buscar entre tus vehículos y su historial, también los ya entregados.</p>';return}
+ const placas=new Set(OS.filter(o=>coincide(o,q)).map(o=>nMat(o.mat)));
+ if(!placas.size){box.innerHTML='<p class="mute" style="margin-top:12px">Sin resultados.</p>';return}
+ box.innerHTML=[...placas].slice(0,30).map(m=>{const v=OS.filter(o=>nMat(o.mat)==m).sort((a,b)=>b.creado-a.creado),u=v[0];
+  return `<div class="gr"><div class="cab"><span class="mat">${esc(u.mat)}</span> <b>${esc(u.marca)} ${esc(u.modelo)}</b> <span class="mute">${u.anio||""}</span><div>${esc(u.cli)} · <a href="tel:${esc(u.tel)}">${esc(u.tel)}</a></div></div>`
+   +v.map(o=>`<button class="vis" onclick="abrir('${o.id}')"><b>${esc(o.fecha)}</b><span>${esc(mots(o))}</span><span class="chip ${o.estado=="Entregado"?"fin":""}">${esc(o.estado)}</span><span class="mute">${(+o.km).toLocaleString("es-ES")} km</span></button>`).join("")+`</div>`}).join("")
+  +(placas.size>30?'<p class="mute">Hay más resultados: afina la búsqueda.</p>':"")}
 
 /* 2. ALTA DE VEHÍCULO */
 function entrada(){fotoTmp="";
@@ -92,7 +113,7 @@ function entrada(){fotoTmp="";
  <p class="mute" style="margin:14px 0 0">El vehículo quedará asignado a ti.</p>
  <p style="margin-top:12px"><button class="btn" id="e-ok">Registrar entrada</button></p></form>`}
 function leer(i){const f=i.files[0];fotoTmp="";if(f)comprime(f).then(d=>fotoTmp=d).catch(()=>alert("No se ha podido leer la foto"))}
-async function auto(){const m=$("#e-mat").value.toUpperCase().replace(/\s/g,"");if(m.length<4)return;
+async function auto(){const m=nMat($("#e-mat").value);if(m.length<4)return;
  try{const o=await api("ordenes?mat="+encodeURIComponent(m));["marca","modelo","anio","cli","tel"].forEach(k=>{if(o[k]!==undefined&&!$("#e-"+k).value)$("#e-"+k).value=o[k]})}catch(x){}}
 async function guardar(ev){ev.preventDefault();const g=i=>$("#e-"+i).value.trim();
  const mot=[...document.querySelectorAll("[name=mot]:checked")].map(x=>x.value),otro=$("#e-otrochk").checked?g("otro"):"";
@@ -103,30 +124,57 @@ async function guardar(ev){ev.preventDefault();const g=i=>$("#e-"+i).value.trim(
   await api("ordenes","POST",o);await cargar();fotoTmp="";ir("tablero")}catch(x){alert(x.message);b.disabled=false}}
 
 /* 3. FICHA DE LA ORDEN + historial del coche */
-function abrir(id){cur=OS.find(o=>o.id==id);ficha()}
+let ED=false;
+function abrir(id){cur=OS.find(o=>o.id==id);ED=false;ficha()}
+const entradaHtml=o=>ED?formEd(o):`<h2>Entrada <button class="btn sec sm" style="margin-left:8px" onclick="ED=true;ficha()">Editar datos</button></h2><div>${esc(o.cli)} · <a href="tel:${esc(o.tel)}">${esc(o.tel)}</a></div><div class="mute">${esc(mots(o))}</div>`;
+function formEd(o){const ms=[...new Set([...MOT,...o.mot])],v=k=>esc(o[k]??"");
+ return `<h2>Corregir datos de la entrada</h2><form onsubmit="guardarEd(event)"><div class="grid">
+ <div><label for="x-mat">Matrícula</label><input id="x-mat" required value="${v("mat")}" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase"></div><div><label for="x-km">Kilómetros</label><input id="x-km" type="number" inputmode="numeric" min="0" required value="${v("km")}"></div>
+ <div><label for="x-marca">Marca</label><input id="x-marca" required value="${v("marca")}"></div><div><label for="x-modelo">Modelo</label><input id="x-modelo" required value="${v("modelo")}"></div><div><label for="x-anio">Año</label><input id="x-anio" type="number" inputmode="numeric" min="1950" max="2030" required value="${v("anio")}"></div><div></div>
+ <div><label for="x-cli">Cliente</label><input id="x-cli" required value="${v("cli")}"></div><div><label for="x-tel">Teléfono</label><input id="x-tel" type="tel" required value="${v("tel")}"></div></div>
+ <label>Motivo de la visita</label><div class="chips">${ms.map(m=>`<label><input type="checkbox" name="xmot" value="${esc(m)}" ${o.mot.includes(m)?"checked":""}>${esc(m)}</label>`).join("")}<label><input type="checkbox" id="x-otrochk" ${o.otro?"checked":""} onchange="$('#x-otro').classList.toggle('hide',!this.checked)">Otro</label></div>
+ <input id="x-otro" class="${o.otro?"":"hide"}" placeholder="Describe el motivo" value="${v("otro")}" style="margin-top:8px">
+ <p style="margin-top:14px"><button class="btn">Guardar cambios</button> <button type="button" class="btn sec" onclick="ED=false;ficha()">Cancelar</button></p></form>`}
+async function guardarEd(ev){ev.preventDefault();const g=i=>$("#x-"+i).value.trim(),o=cur;
+ const mot=[...document.querySelectorAll("[name=xmot]:checked")].map(x=>x.value),otro=$("#x-otrochk").checked?g("otro"):"";
+ if(!mot.length&&!otro)return alert("Elige al menos un motivo.");
+ const n={mat:nMat(g("mat")),marca:g("marca"),modelo:g("modelo"),anio:+g("anio")||0,km:Math.round(+g("km")||0),cli:g("cli"),tel:g("tel"),mot,otro};
+ const ks=Object.keys(n).filter(k=>JSON.stringify(n[k])!==JSON.stringify(o[k]??(k=="mot"?[]:"")));
+ if(ks.length&&!await save(o,ks,n))return; // error de validación: el formulario se queda como está para corregirlo
+ ED=false;ficha()}
 function ficha(){const o=cur,libre=YO.libre||!VB,hist=OS.filter(x=>x.mat==o.mat&&x.id!=o.id);
  const vb=o.vb=="ok"?'<span class="ok">Presupuesto aprobado</span>':o.vb=="pendiente"?'<span class="mute">Pendiente del visto bueno del taller</span>':(libre?'<button class="btn" onclick="setVB(\'ok\')">Cerrar presupuesto</button>':'<button class="btn" onclick="setVB(\'pendiente\')">Pedir visto bueno</button>');
  $("#fd").innerHTML=`<div class="fh">${o.foto?`<img src="${src(o.foto)}" alt="">`:'<div class="sf">Sin foto</div>'}<div><span class="mat">${esc(o.mat)}</span><h1 style="font-size:1.4rem">${esc(o.marca)} ${esc(o.modelo)} · ${o.anio}</h1><span class="mute">${(+o.km).toLocaleString("es-ES")} km · entrada ${esc(o.fecha)}</span></div><button class="btn sec" style="margin-left:auto" onclick="$('#fd').close()">Cerrar</button></div>
  <div class="fb"><label for="f-est">Estado</label><select id="f-est" onchange="cambia('estado',this.value)">${ESTADOS.map(e=>`<option ${o.estado==e?"selected":""}>${e}</option>`).join("")}</select>
- <h2>Entrada</h2><div>${esc(o.cli)} · <a href="tel:${esc(o.tel)}">${esc(o.tel)}</a></div><div class="mute">${esc(mots(o))}</div>
+ ${entradaHtml(o)}
  <h2>Notas para el cliente</h2><textarea rows="3" onchange="cambia('notas',this.value)" placeholder="Explica qué has encontrado y qué recomiendas">${esc(o.notas)}</textarea>
  <h2>Fotos</h2><input type="file" accept="image/*" multiple onchange="fotos(this)"><div class="fotos">${o.fotos.map(f=>`<img src="${src(f)}" alt="Foto de la orden">`).join("")}</div>
  <h2>Presupuesto</h2><table><tr><th>Concepto</th><th>Tipo</th><th>Importe</th></tr>${o.pres.map((l,i)=>`<tr><td>${esc(l.c)}</td><td>${esc(l.t)}</td><td>${eur(+l.i)} <button class="btn sec" style="padding:2px 8px" onclick="quitar(${i})" aria-label="Quitar línea">×</button></td></tr>`).join("")||'<tr><td colspan="3" class="mute">Añade la primera línea</td></tr>'}</table>
  <div class="pl"><div><label for="p-c">Concepto</label><input id="p-c"></div><div><label for="p-t">Tipo</label><select id="p-t"><option>Mano de obra</option><option>Pieza</option></select></div><div><label for="p-i">Importe (€)</label><input id="p-i" type="number" inputmode="decimal" min="0" step="0.01"></div><button class="btn" onclick="linea()">Añadir</button></div>
  <div class="tot">Base ${eur(tot(o))} · IVA 21 % ${eur(tot(o)*.21)} · <b>Total ${eur(tot(o)*1.21)}</b></div><p style="text-align:right">${vb}</p>
- <h2>Historial de este coche</h2>${hist.map(x=>`<div class="hist"><b>${esc(x.fecha)}</b> · ${esc(mots(x))} · ${esc(x.estado)} · ${eur(tot(x)*1.21)}<div class="mute">${esc(x.notas)}</div></div>`).join("")||'<p class="mute">Primera visita registrada.</p>'}</div>`;
+ <h2>Historial de este coche</h2>${hist.map(x=>`<div class="hist"><b>${esc(x.fecha)}</b> · ${esc(mots(x))} · ${esc(x.estado)} · ${eur(tot(x)*1.21)}<div class="mute">${esc(x.notas)}</div></div>`).join("")||'<p class="mute">Primera visita registrada.</p>'}${o.mod?`<p class="mute" style="font-size:.82rem;margin-top:18px">Última modificación: ${fechaHora(o.mod)} · ${esc(o.modPor)}</p>`:""}</div>`;
  if(!$("#fd").open)$("#fd").showModal()}
-// guarda en el servidor y refleja lo que éste devuelve (p. ej. un visto bueno que pasa a «pendiente»)
-async function save(ks){try{Object.assign(cur,await api("ordenes/"+cur.id,"PUT",Object.fromEntries(ks.map(k=>[k,cur[k]]))))}catch(x){alert("No se ha podido guardar: "+x.message)}}
-async function cambia(k,v){cur[k]=v;await save([k])}
-async function fotos(i){for(const f of i.files){try{cur.fotos.push((await api("fotos","POST",{data:await comprime(f)})).id)}catch(x){alert(x.message)}}await save(["fotos"]);ficha()}
-async function linea(){const c=$("#p-c").value.trim(),i=$("#p-i").value;if(!c||i==="")return;cur.pres.push({c,t:$("#p-t").value,i:+i});cur.vb="";await save(["pres","vb"]);ficha()}
-async function quitar(i){cur.pres.splice(i,1);cur.vb="";await save(["pres","vb"]);ficha()}
-async function setVB(v){cur.vb=v;await save(["vb"]);ficha()}
-$("#fd").addEventListener("close",()=>{if(vista=="tablero")tablero()});
+/* GUARDADO CON CONTROL DE VERSIÓN. Cada orden lleva un número de versión (rev). Se envía la que tenías en pantalla y SOLO los campos que cambias:
+   si otra persona ha cambiado ESE mismo campo mientras tanto, el servidor no pisa su cambio: devuelve la orden actual (409) y aquí se carga.
+   Si ha tocado otros campos distintos, se fusiona sin molestar. Devuelve 1 = guardado, 2 = conflicto (se ha cargado lo último), 0 = error.
+   Las escrituras se encolan para que dos clics seguidos no choquen entre sí; el contenido se lee en el momento de enviar. */
+let COLA=Promise.resolve();
+const save=(o,ks,vals,mudo)=>COLA=COLA.then(()=>guarda(o,ks,vals,mudo),()=>guarda(o,ks,vals,mudo));
+async function guarda(o,ks,vals,mudo){
+ try{Object.assign(o,await api("ordenes/"+o.id,"PUT",{rev:o.rev||0,...Object.fromEntries(ks.map(k=>[k,vals&&k in vals?vals[k]:o[k]]))}));return 1}
+ catch(x){if(x.actual){Object.assign(o,x.actual);if(!mudo)alert(x.message);return 2}if(!mudo)alert("No se ha podido guardar: "+x.message);return 0}}
+// Aplica un cambio local, lo guarda y redibuja la ficha. Si falla, deshace el cambio local.
+async function edita(ks,fn){const o=cur,ant=JSON.stringify(ks.map(k=>o[k]));fn(o);
+ if(await save(o,ks)==0)JSON.parse(ant).forEach((v,i)=>o[ks[i]]=v);ficha()}
+async function cambia(k,v){const o=cur,ant=o[k];o[k]=v;const r=await save(o,[k]);if(r==0)o[k]=ant;if(r!=1)ficha()}
+async function fotos(i){for(const f of i.files){try{const id=(await api("fotos","POST",{data:await comprime(f)})).id;cur.fotos.push(id)}catch(x){alert(x.message)}}await save(cur,["fotos"]);ficha()}
+function linea(){const c=$("#p-c").value.trim(),i=$("#p-i").value;if(!c||i==="")return;edita(["pres","vb"],o=>{o.pres.push({c,t:$("#p-t").value,i:+i});o.vb=""})}
+function quitar(i){edita(["pres","vb"],o=>{o.pres.splice(i,1);o.vb=""})}
+function setVB(v){edita(["vb"],o=>{o.vb=v})}
+$("#fd").addEventListener("close",()=>{if(vista=="tablero")tablero();else if(vista=="buscar")resultados()});
 const comprime=async f=>{const b=await createImageBitmap(f),k=Math.min(1,1000/Math.max(b.width,b.height)),c=document.createElement("canvas");c.width=b.width*k;c.height=b.height*k;c.getContext("2d").drawImage(b,0,0,c.width,c.height);return c.toDataURL("image/jpeg",.72)};
 
 cargar().then(ok=>ok&&pintar()).catch(x=>{$("#v").innerHTML='<p class="mute">No se ha podido cargar: '+esc(x.message)+"</p>"});
 // refresco suave del tablero (por si el taller te asigna un coche)
-setInterval(async()=>{if(vista!="tablero"||$("#fd").open||document.hidden)return;try{OS=await api("ordenes");tablero()}catch(x){}},45000);
+setInterval(async()=>{if(!["tablero","buscar"].includes(vista)||$("#fd").open||document.hidden)return;try{OS=await api("ordenes");vista=="tablero"?tablero():resultados()}catch(x){}},45000);
 </script></body></html>

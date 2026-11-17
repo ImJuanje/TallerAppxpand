@@ -49,6 +49,9 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1p
 .cod{font:700 1.8rem "Barlow Semi Condensed",monospace;letter-spacing:.2em;margin:14px 0 4px;word-break:break-all}
 .chip{font-size:.75rem;font-weight:600;padding:2px 8px;border-radius:10px;background:#e3e8f1;color:var(--mute)}.chip.pendiente{background:#dbe6ff;color:#1c4fd8}.chip.usada{background:#d9f2e4;color:var(--ok)}
 .bdg{display:inline-block;min-width:18px;padding:0 6px;border-radius:9px;background:#e5484d;color:#fff;font-size:.75rem;font-weight:700;text-align:center}.vbp{color:#b45309;font-weight:600}
+.chip.fin{background:#d9f2e4;color:var(--ok)}
+.vis{display:flex;gap:4px 10px;flex-wrap:wrap;align-items:center;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:9px 2px;cursor:pointer;font:inherit;color:inherit}.vis:hover{background:#f3f6fb}
+.gr{margin-top:14px}.gr .cab{margin-bottom:6px}.sm{padding:4px 10px;font-size:.85rem}.btn:disabled{opacity:.6;cursor:wait}
 </style></head>
 <body>
 <header class="top"><span class="brand">Taller <b>AppXpand</b></span><nav id="nav"></nav>
@@ -73,21 +76,39 @@ const mots=o=>[...o.mot,...(o.otro?[o.otro]:[])].join(", ");
 const eur=x=>x.toLocaleString("es-ES",{style:"currency",currency:"EUR"}),tot=o=>o.pres.reduce((s,l)=>s+ +l.i,0);
 let vista="tablero",F="*",cur=null,fotoTmp="";
 const ir=v=>{vista=v;pintar()};
-const NAVS=[["tablero","Tablero"],["aprobar","Por aprobar"],["entrada","Nueva entrada"],["equipo","Equipo"],["ajustes","Ajustes"]];
+const NAVS=[["tablero","Tablero"],["buscar","Buscar"],["aprobar","Por aprobar"],["entrada","Nueva entrada"],["equipo","Equipo"],["ajustes","Ajustes"]];
 const pend=()=>D.ordenes.filter(o=>o.vb==="pendiente"&&o.estado!=="Entregado");
 function nav(){const n=pend().length;document.title=(n?`(${n}) `:"")+"Panel · Taller AppXpand";
  $("#nav").innerHTML=NAVS.map(([k,t])=>`<button class="${vista==k?"on":""}" onclick="ir('${k}')">${t}${k=="aprobar"&&n?` <span class="bdg">${n}</span>`:""}</button>`).join("")}
-function pintar(){nav();({tablero,aprobar,entrada,equipo,ajustes})[vista]()}
+function pintar(){nav();({tablero,buscar,aprobar,entrada,equipo,ajustes})[vista]()}
 
 /* 1. TABLERO */
 const tarjeta=o=>`<article class="tj" draggable="true" ondragstart="event.dataTransfer.setData('t','${o.id}')" onclick="abrir('${o.id}')">${o.foto?`<img src="${src(o.foto)}" alt="">`:`<div class="sf">Sin foto</div>`}<div><span class="mat">${esc(o.mat)}</span><div>${esc(o.marca)} ${esc(o.modelo)}</div><small>${esc(mots(o))}</small>${o.vb=="pendiente"?'<small class="vbp">Pendiente de visto bueno</small>':""}${adm()?`<small class="mec">${esc(nom(o.mec))}</small>`:""}</div></article>`;
 function tablero(){let os=vis();if(adm()&&F!="*")os=os.filter(o=>F=="-"?!o.mec:o.mec==F);
  $("#v").innerHTML=(adm()?`<div class="bar"><label style="display:inline;font-weight:600">Mostrar<select onchange="F=this.value;tablero()" style="width:auto"><option value="*">Todos</option><option value="-" ${F=="-"?"selected":""}>Sin asignar</option>${D.equipo.map(u=>`<option value="${u.u}" ${F==u.u?"selected":""}>${esc(u.n)}</option>`).join("")}</select></label></div>`:"")
  +`<div class="board">`+ESTADOS.map(e=>{const l=os.filter(o=>o.estado==e);return `<section class="col" ondragover="event.preventDefault()" ondrop="mover(event,'${e}')"><h2>${e}<span>${l.length}</span></h2>${e=="Entregado"?'<p class="vac">Suelta aquí el coche al entregarlo. Sale del tablero y queda en su historial.</p>':l.map(tarjeta).join("")||'<p class="vac">Sin vehículos</p>'}</section>`}).join("")+`</div>`}
-function mover(ev,e){ev.preventDefault();const o=D.ordenes.find(x=>x.id==ev.dataTransfer.getData("t"));if(o){o.estado=e;tablero();save(o,["estado"])}}
+async function mover(ev,e){ev.preventDefault();const o=D.ordenes.find(x=>x.id==ev.dataTransfer.getData("t"));if(!o||o.estado===e)return;
+ const ant=o.estado;o.estado=e;tablero();if(await save(o,["estado"])==0)o.estado=ant;if(vista=="tablero")tablero()}
+/* BUSCADOR: matrícula, cliente, teléfono o modelo, incluidos los coches ya entregados */
+const norm=s=>String(s??"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""),nTxt=s=>norm(s).replace(/\s+/g," ").trim(),nClave=s=>norm(s).replace(/[^a-z0-9]/g,"");
+const nMat=s=>String(s??"").toUpperCase().replace(/[^A-Z0-9]/g,""),fechaHora=t=>new Date(t).toLocaleString("es-ES",{timeZone:"Europe/Madrid",dateStyle:"short",timeStyle:"short"});
+const coincide=(o,q)=>{const hay=nTxt([o.mat,o.cli,o.tel,o.marca,o.modelo,o.otro].join(" ")),m=nClave(o.mat),t=nClave(o.tel);
+ return nTxt(q).split(" ").filter(Boolean).every(w=>{const c=nClave(w);return hay.includes(w)||(c&&(m.includes(c)||t.includes(c)))})};
+let BQ="";
+function buscar(){$("#v").innerHTML=`<div class="card"><h1>Buscar</h1><label for="q">Matrícula, cliente, teléfono o modelo</label><input id="q" type="search" value="${esc(BQ)}" placeholder="Ej.: 4821KLM o Ana Ruiz" autocomplete="off" autocapitalize="none" oninput="BQ=this.value;resultados()"><div id="res"></div></div>`;resultados()}
+function resultados(){const box=$("#res");if(!box)return;const q=BQ.trim();
+ if(!q){box.innerHTML='<p class="mute" style="margin-top:12px">Escribe para buscar entre todos los vehículos, también los ya entregados.</p>';return}
+ const placas=new Set(D.ordenes.filter(o=>coincide(o,q)).map(o=>nMat(o.mat)));
+ if(!placas.size){box.innerHTML='<p class="mute" style="margin-top:12px">Sin resultados.</p>';return}
+ box.innerHTML=[...placas].slice(0,30).map(m=>{const v=D.ordenes.filter(o=>nMat(o.mat)==m).sort((a,b)=>(b.creado||0)-(a.creado||0)),u=v[0];
+  return `<div class="gr"><div class="cab"><span class="mat">${esc(u.mat)}</span> <b>${esc(u.marca)} ${esc(u.modelo)}</b> <span class="mute">${u.anio||""}</span><div>${esc(u.cli)} · <a href="tel:${esc(u.tel)}">${esc(u.tel)}</a></div></div>`
+   +v.map(o=>`<button class="vis" onclick="abrir('${o.id}')"><b>${esc(o.fecha)}</b><span>${esc(mots(o))}</span><span class="chip ${o.estado=="Entregado"?"fin":""}">${esc(o.estado)}</span><span class="mute">${esc(nom(o.mec))}${tot(o)?" · "+eur(tot(o)*1.21):""}</span></button>`).join("")+`</div>`}).join("")
+  +(placas.size>30?'<p class="mute">Hay más resultados: afina la búsqueda.</p>':"")}
+
 
 /* 2. ENTRADA DE VEHÍCULO (solo admin) */
-function entrada(){const mec=D.equipo.map(u=>`<option value="${u.u}">${esc(u.n)}</option>`).join("");
+async function entrada(){if(API)await cargar(); // lista de mecánicos y motivos al día (p. ej. alguien recién dado de alta)
+ const mec=D.equipo.map(u=>`<option value="${u.u}">${esc(u.n)}</option>`).join("");
  $("#v").innerHTML=`<form class="card" onsubmit="guardar(event)"><h1>Nueva entrada</h1>
  <div class="grid"><div><label>Matrícula</label><input id="e-mat" required onblur="auto()" style="text-transform:uppercase"></div><div><label>Kilómetros</label><input id="e-km" type="number" min="0" required></div>
  <div><label>Marca</label><input id="e-marca" required></div><div><label>Modelo</label><input id="e-modelo" required></div><div><label>Año</label><input id="e-anio" type="number" min="1950" max="2030" required></div>
@@ -98,7 +119,7 @@ function entrada(){const mec=D.equipo.map(u=>`<option value="${u.u}">${esc(u.n)}
  <label>Asignar a</label><select id="e-mec"><option value="">Sin asignar</option>${mec}</select>
  <p style="margin-top:18px"><button class="btn">Registrar entrada</button></p></form>`}
 function leer(i){const f=i.files[0];if(f)comprime(f).then(d=>fotoTmp=d)}
-function auto(){const m=$("#e-mat").value.toUpperCase().replace(/\s/g,""),o=[...D.ordenes].reverse().find(x=>x.mat==m);if(!o)return;
+function auto(){const m=nMat($("#e-mat").value),o=[...D.ordenes].sort((a,b)=>(b.creado||0)-(a.creado||0)).find(x=>nMat(x.mat)==m);if(!o)return;
  ["marca","modelo","anio","cli","tel"].forEach(k=>$("#e-"+(k)).value=o[k])}
 async function guardar(ev){ev.preventDefault();const g=i=>$("#e-"+i).value.trim();
  const mot=[...document.querySelectorAll("[name=mot]:checked")].map(x=>x.value),otro=$("#e-otrochk").checked?g("otro"):"";
@@ -109,39 +130,68 @@ async function guardar(ev){ev.preventDefault();const g=i=>$("#e-"+i).value.trim(
  fotoTmp="";F="*";ir("tablero")}catch(x){alert(x.message)}}
 
 /* 3. FICHA DE ORDEN (+ 4. HISTORIAL del coche) */
-function abrir(id){cur=D.ordenes.find(o=>o.id==id);ficha()}
+let ED=false;
+const entradaHtml=o=>ED?formEd(o):`<h2>Entrada <button class="btn sec sm" style="margin-left:8px" onclick="ED=true;ficha()">Editar datos</button></h2><div>${esc(o.cli)} · <a href="tel:${esc(o.tel)}">${esc(o.tel)}</a></div><div class="mute">${esc(mots(o))}</div>`;
+function formEd(o){const ms=[...new Set([...D.motivos,...o.mot])],v=k=>esc(o[k]??"");
+ return `<h2>Corregir datos de la entrada</h2><form onsubmit="guardarEd(event)"><div class="grid">
+ <div><label for="x-mat">Matrícula</label><input id="x-mat" required value="${v("mat")}" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase"></div><div><label for="x-km">Kilómetros</label><input id="x-km" type="number" inputmode="numeric" min="0" required value="${v("km")}"></div>
+ <div><label for="x-marca">Marca</label><input id="x-marca" required value="${v("marca")}"></div><div><label for="x-modelo">Modelo</label><input id="x-modelo" required value="${v("modelo")}"></div><div><label for="x-anio">Año</label><input id="x-anio" type="number" inputmode="numeric" min="1950" max="2030" required value="${v("anio")}"></div><div></div>
+ <div><label for="x-cli">Cliente</label><input id="x-cli" required value="${v("cli")}"></div><div><label for="x-tel">Teléfono</label><input id="x-tel" type="tel" required value="${v("tel")}"></div></div>
+ <label>Motivo de la visita</label><div class="chips">${ms.map(m=>`<label><input type="checkbox" name="xmot" value="${esc(m)}" ${o.mot.includes(m)?"checked":""}>${esc(m)}</label>`).join("")}<label><input type="checkbox" id="x-otrochk" ${o.otro?"checked":""} onchange="$('#x-otro').classList.toggle('hide',!this.checked)">Otro</label></div>
+ <input id="x-otro" class="${o.otro?"":"hide"}" placeholder="Describe el motivo" value="${v("otro")}" style="margin-top:8px">
+ <p style="margin-top:14px"><button class="btn">Guardar cambios</button> <button type="button" class="btn sec" onclick="ED=false;ficha()">Cancelar</button></p></form>`}
+async function guardarEd(ev){ev.preventDefault();const g=i=>$("#x-"+i).value.trim(),o=cur;
+ const mot=[...document.querySelectorAll("[name=xmot]:checked")].map(x=>x.value),otro=$("#x-otrochk").checked?g("otro"):"";
+ if(!mot.length&&!otro)return alert("Elige al menos un motivo.");
+ const n={mat:nMat(g("mat")),marca:g("marca"),modelo:g("modelo"),anio:+g("anio")||0,km:Math.round(+g("km")||0),cli:g("cli"),tel:g("tel"),mot,otro};
+ const ks=Object.keys(n).filter(k=>JSON.stringify(n[k])!==JSON.stringify(o[k]??(k=="mot"?[]:"")));
+ if(ks.length&&!await save(o,ks,n))return; // error de validación: el formulario se queda como está para corregirlo
+ ED=false;ficha()}
+function abrir(id){cur=D.ordenes.find(o=>o.id==id);ED=false;ficha()}
 function ficha(){const o=cur,a=adm(),libre=a||yo().libre||!D.vb,hist=D.ordenes.filter(x=>x.mat==o.mat&&x.id!=o.id);
  const vb=o.vb=="ok"?'<span class="ok">Presupuesto aprobado</span>':o.vb=="pendiente"?(a?'<button class="btn" onclick="setVB(\'ok\')">Dar visto bueno</button>':'<span class="mute">Pendiente del visto bueno del taller</span>'):(libre?'<button class="btn" onclick="setVB(\'ok\')">Cerrar presupuesto</button>':'<button class="btn" onclick="setVB(\'pendiente\')">Pedir visto bueno</button>');
  $("#fd").innerHTML=`<div class="fh">${o.foto?`<img src="${src(o.foto)}" alt="">`:'<div class="sf">Sin foto</div>'}<div><span class="mat">${esc(o.mat)}</span><h1 style="font-size:1.4rem">${esc(o.marca)} ${esc(o.modelo)} · ${o.anio}</h1><span class="mute">${(+o.km).toLocaleString("es-ES")} km · entrada ${esc(o.fecha)}</span></div><button class="btn sec" style="margin-left:auto" onclick="$('#fd').close()">Cerrar</button></div>
  <div class="fb"><div class="grid"><div><label>Estado</label><select onchange="cambia('estado',this.value)">${ESTADOS.map(e=>`<option ${o.estado==e?"selected":""}>${e}</option>`).join("")}</select></div>
  <div><label>Mecánico</label>${a?`<select onchange="cambia('mec',this.value)"><option value="">Sin asignar</option>${D.equipo.map(u=>`<option value="${u.u}" ${o.mec==u.u?"selected":""}>${esc(u.n)}</option>`).join("")}</select>`:`<div>${esc(nom(o.mec))}</div>`}</div></div>
- <h2>Entrada</h2><div>${esc(o.cli)} · <a href="tel:${esc(o.tel)}">${esc(o.tel)}</a></div><div class="mute">${esc(mots(o))}</div>
+ ${entradaHtml(o)}
  <h2>Notas para el cliente</h2><textarea rows="3" onchange="cambia('notas',this.value)" placeholder="Explica qué has encontrado y qué recomiendas">${esc(o.notas)}</textarea>
  <h2>Fotos</h2><input type="file" accept="image/*" multiple onchange="fotos(this)"><div class="fotos">${o.fotos.map(f=>`<img src="${src(f)}" alt="Foto de la orden">`).join("")}</div>
  <h2>Presupuesto</h2><table><tr><th>Concepto</th><th>Tipo</th><th>Importe</th></tr>${o.pres.map((l,i)=>`<tr><td>${esc(l.c)}</td><td>${esc(l.t)}</td><td>${eur(+l.i)} <button class="btn sec" style="padding:2px 8px" onclick="quitar(${i})" aria-label="Quitar línea">×</button></td></tr>`).join("")||'<tr><td colspan="3" class="mute">Añade la primera línea</td></tr>'}</table>
  <div class="grid" style="grid-template-columns:2fr 1.2fr 1fr auto;align-items:end;gap:8px"><div><label>Concepto</label><input id="p-c"></div><div><label>Tipo</label><select id="p-t"><option>Mano de obra</option><option>Pieza</option></select></div><div><label>Importe (€)</label><input id="p-i" type="number" min="0" step="0.01"></div><button class="btn" onclick="linea()">Añadir</button></div>
  <div class="tot">Base ${eur(tot(o))} · IVA 21 % ${eur(tot(o)*.21)} · <b>Total ${eur(tot(o)*1.21)}</b></div><p style="text-align:right">${vb}</p>
- <h2>Historial de este coche</h2>${hist.map(x=>`<div class="hist"><b>${esc(x.fecha)}</b> · ${esc(mots(x))} · ${esc(x.estado)} · ${eur(tot(x)*1.21)}<div class="mute">${esc(x.notas)}</div></div>`).join("")||'<p class="mute">Primera visita registrada.</p>'}</div>`;
+ <h2>Historial de este coche</h2>${hist.map(x=>`<div class="hist"><b>${esc(x.fecha)}</b> · ${esc(mots(x))} · ${esc(x.estado)} · ${eur(tot(x)*1.21)}<div class="mute">${esc(x.notas)}</div></div>`).join("")||'<p class="mute">Primera visita registrada.</p>'}${o.mod?`<p class="mute" style="font-size:.82rem;margin-top:18px">Última modificación: ${fechaHora(o.mod)} · ${esc(D.equipo.find(x=>x.u==o.modPor)?.n||o.modPor)}</p>`:""}</div>`;
  if(!$("#fd").open)$("#fd").showModal()}
-async function fotos(i){for(const f of i.files){try{cur.fotos.push(await subir(await comprime(f)))}catch(x){alert(x.message)}}save(cur,["fotos"]);ficha()}
-function linea(){const c=$("#p-c").value.trim(),i=$("#p-i").value;if(!c||i==="")return;cur.pres.push({c,t:$("#p-t").value,i:+i});cur.vb="";save(cur,["pres","vb"]);ficha()}
-function quitar(i){cur.pres.splice(i,1);cur.vb="";save(cur,["pres","vb"]);ficha()}
-function setVB(v){cur.vb=v;save(cur,["vb"]);ficha()}
+async function fotos(i){for(const f of i.files){try{const id=await subir(await comprime(f));cur.fotos.push(id)}catch(x){alert(x.message)}}await save(cur,["fotos"]);ficha()}
+function linea(){const c=$("#p-c").value.trim(),i=$("#p-i").value;if(!c||i==="")return;edita(["pres","vb"],o=>{o.pres.push({c,t:$("#p-t").value,i:+i});o.vb=""})}
+function quitar(i){edita(["pres","vb"],o=>{o.pres.splice(i,1);o.vb=""})}
+function setVB(v){edita(["vb"],o=>{o.vb=v})}
 /* 7. POR APROBAR */
 function aprobar(){const l=pend();
  $("#v").innerHTML=`<div class="card"><h1>Presupuestos por aprobar</h1><p class="mute" style="margin:6px 0 0">Los que los mecánicos han enviado a tu visto bueno.</p></div>`+(l.length?l.map(o=>`<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><span class="mat">${esc(o.mat)}</span> <b>${esc(o.marca)} ${esc(o.modelo)}</b><div class="mute">${esc(nom(o.mec))} · ${esc(mots(o))}</div></div><div style="text-align:right"><b>${eur(tot(o)*1.21)}</b><div class="mute">IVA incluido</div></div></div>
  <table style="margin-top:8px">${o.pres.map(x=>`<tr><td>${esc(x.c)}</td><td>${esc(x.t)}</td><td>${eur(+x.i)}</td></tr>`).join("")}</table>
  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" onclick="decidir('${o.id}','ok')">Dar visto bueno</button><button class="btn sec" onclick="decidir('${o.id}','')">Devolver al mecánico</button><button class="btn sec" onclick="abrir('${o.id}')">Ver ficha</button></div></div>`).join(""):`<div class="card" style="margin-top:14px"><p class="mute" style="margin:0">No hay presupuestos pendientes.</p></div>`)}
 async function decidir(id,v){const o=D.ordenes.find(x=>x.id==id);if(!o)return;const ant=o.vb;o.vb=v;
- if(API)try{await api("ordenes/"+id,"PUT",{vb:v})}catch(x){o.vb=ant;alert("No se ha podido guardar: "+x.message)}
+ if(await save(o,["vb"])==0)o.vb=ant; // si el mecánico cambió el presupuesto después de que lo vieras, no se aprueba: se recarga la versión nueva
  pintar()}
 $("#fd").addEventListener("close",pintar);
 /* API (si no hay servidor, la página sigue en modo demostración) */
 let EQ=[],API=false;
-const api=async(r,m="GET",b)=>{const x=await fetch("/api/"+r,{method:m,headers:{"content-type":"application/json"},body:b?JSON.stringify(b):undefined});const j=await x.json().catch(()=>({}));if(x.status==403)location.href="/";if(!x.ok)throw new Error(j.error||"Algo ha fallado");return j};
+const api=async(r,m="GET",b)=>{const x=await fetch("/api/"+r,{method:m,headers:{"content-type":"application/json"},body:b?JSON.stringify(b):undefined});const j=await x.json().catch(()=>({}));if(x.status==403)location.href="/";if(!x.ok){const e=new Error(j.error||"Algo ha fallado");e.actual=j.actual;throw e}return j};
 const src=f=>String(f).startsWith("data:")?f:"/api/fotos/"+f;
-const save=async(o,ks)=>{if(!API)return;try{await api("ordenes/"+o.id,"PUT",Object.fromEntries(ks.map(k=>[k,o[k]])))}catch(x){alert("No se ha podido guardar: "+x.message)}};
-const cambia=(k,v)=>{cur[k]=v;save(cur,[k])};
+/* GUARDADO CON CONTROL DE VERSIÓN. Cada orden lleva un número de versión (rev). Se envía la que tenías en pantalla y SOLO los campos que cambias:
+   si otra persona ha cambiado ESE mismo campo mientras tanto, el servidor no pisa su cambio: devuelve la orden actual (409) y aquí se carga.
+   Si ha tocado otros campos distintos, se fusiona sin molestar. Devuelve 1 = guardado, 2 = conflicto (se ha cargado lo último), 0 = error.
+   Las escrituras se encolan para que dos clics seguidos no choquen entre sí; el contenido se lee en el momento de enviar. */
+let COLA=Promise.resolve();
+const save=(o,ks,vals,mudo)=>COLA=COLA.then(()=>guarda(o,ks,vals,mudo),()=>guarda(o,ks,vals,mudo));
+async function guarda(o,ks,vals,mudo){
+ if(!API){if(vals)Object.assign(o,vals);return 1}
+ try{Object.assign(o,await api("ordenes/"+o.id,"PUT",{rev:o.rev||0,...Object.fromEntries(ks.map(k=>[k,vals&&k in vals?vals[k]:o[k]]))}));return 1}
+ catch(x){if(x.actual){Object.assign(o,x.actual);if(!mudo)alert(x.message);return 2}if(!mudo)alert("No se ha podido guardar: "+x.message);return 0}}
+// Aplica un cambio local, lo guarda y redibuja la ficha. Si falla, deshace el cambio local.
+async function edita(ks,fn){const o=cur,ant=JSON.stringify(ks.map(k=>o[k]));fn(o);
+ if(await save(o,ks)==0)JSON.parse(ant).forEach((v,i)=>o[ks[i]]=v);ficha()}
+async function cambia(k,v){const o=cur,ant=o[k];o[k]=v;const r=await save(o,[k]);if(r==0)o[k]=ant;if(r!=1)ficha()}
 const subir=async d=>API?(await api("fotos","POST",{data:d})).id:d;
 const comprime=async f=>{const b=await createImageBitmap(f),k=Math.min(1,1000/Math.max(b.width,b.height)),c=document.createElement("canvas");c.width=b.width*k;c.height=b.height*k;c.getContext("2d").drawImage(b,0,0,c.width,c.height);return c.toDataURL("image/jpeg",.72)};
 async function cargar(){try{const[e,a,os]=await Promise.all([api("equipo"),api("ajustes"),api("ordenes")]);EQ=e;D.ordenes=os;D.vb=a.vistoBuenoActivo;D.motivos=a.motivos;
@@ -152,32 +202,73 @@ async function salir(){await fetch("/api/auth/logout",{method:"POST"});location.
 /* 5. EQUIPO */
 const sw=(on,fn,l)=>`<label class="swl"><input type="checkbox" class="sw" ${on?"checked":""} onchange="${fn}"><span>${l}</span></label>`;
 async function equipo(){await cargar();
- $("#v").innerHTML=`<div class="card"><h1>Equipo</h1><p class="mute">Genera un código de alta para cada mecánico. Caduca en 7 días y se usa una sola vez.</p>
+ $("#v").innerHTML=`<div class="card"><h1>Equipo</h1><p class="mute">Genera un código de alta para cada mecánico. Caduca en 7 días y se usa una sola vez. Si un mecánico olvida su contraseña, usa «Restablecer contraseña» en su ficha. (La contraseña del admin se cambia en las variables de entorno de Netlify.)</p>
  <div style="display:flex;gap:8px"><input id="q-nom" placeholder="Nombre del mecánico"><button class="btn" onclick="codigo()">Generar código</button></div>
- <div id="q-res" class="hide"><div class="cod" id="q-cod"></div><div class="mute">Cópialo ahora: no se vuelve a mostrar.</div></div><div id="q-err" class="mute"></div></div>
- <div class="card" style="margin-top:14px"><h2 style="font-size:1.2rem">Mecánicos</h2>${!API?'<p class="mute">Sin conexión con el servidor: modo demostración.</p>':EQ.length?EQ.map(u=>`<div class="mec-f"><div><b>${esc(u.nombre||u.usuario)}</b> <span class="mute">${esc(u.usuario)}${u.activo?"":" · de baja"}</span></div>${u.activo?sw(u.libre,`libre('${esc(u.usuario)}',this.checked)`,"Puede cerrar presupuestos sin visto bueno"):""}<button class="btn sec" onclick="baja('${esc(u.usuario)}',${!u.activo})">${u.activo?"Dar de baja":"Reactivar"}</button></div>`).join(""):'<p class="mute">Aún no hay mecánicos. Genera el primer código.</p>'}</div><div class="card hide" id="inv" style="margin-top:14px"></div>`;
+ <div id="q-res" class="hide"><div class="mute" id="q-tit" style="margin-top:12px;font-weight:600"></div><div class="cod" id="q-cod"></div><div class="mute" id="q-hint"></div></div><div id="q-err" class="mute"></div></div>
+ <div class="card" style="margin-top:14px"><h2 style="font-size:1.2rem">Mecánicos</h2>${!API?'<p class="mute">Sin conexión con el servidor: modo demostración.</p>':EQ.length?EQ.map(u=>`<div class="mec-f"><div><b>${esc(u.nombre||u.usuario)}</b> <span class="mute">${esc(u.usuario)}${u.activo?"":" · de baja"}</span></div>${u.activo?sw(u.libre,`libre('${esc(u.usuario)}',this.checked)`,"Puede cerrar presupuestos sin visto bueno"):""}<span style="display:flex;gap:8px;flex-wrap:wrap">${u.activo?`<button class="btn sec" onclick="resetPw('${esc(u.usuario)}')">Restablecer contraseña</button>`:""}<button class="btn sec" onclick="baja('${esc(u.usuario)}',${!u.activo})">${u.activo?"Dar de baja":"Reactivar"}</button></span></div>`).join(""):'<p class="mute">Aún no hay mecánicos. Genera el primer código.</p>'}</div><div class="card hide" id="inv" style="margin-top:14px"></div>`;
  await pintaInv();
 }
-async function codigo(){try{const r=await api("equipo/codigo","POST",{nombre:$("#q-nom").value});$("#q-cod").textContent=r.codigo;$("#q-res").classList.remove("hide");$("#q-nom").value="";pintaInv()}catch(x){$("#q-err").textContent=x.message}}
+function muestraCodigo(tit,cod,hint){$("#q-tit").textContent=tit;$("#q-cod").textContent=cod;$("#q-hint").textContent=hint;$("#q-res").classList.remove("hide");scrollTo(0,0)}
+const HINT_ALTA="Cópialo ahora: no se vuelve a mostrar.";
+async function codigo(){try{const r=await api("equipo/codigo","POST",{nombre:$("#q-nom").value});muestraCodigo("Código de alta",r.codigo,HINT_ALTA);$("#q-nom").value="";pintaInv()}catch(x){$("#q-err").textContent=x.message}}
+async function resetPw(u){const e=EQ.find(x=>x.usuario==u),n=e?.nombre||u;
+ if(!confirm(`¿Generar un código para que ${n} elija una contraseña nueva?\n\nHasta que lo use, su contraseña actual sigue funcionando. Al usarlo, se cerrará su sesión en todos los dispositivos.`))return;
+ try{const r=await api(`equipo/${u}/reset`,"POST",{});muestraCodigo(`Restablecer la contraseña de ${n} (usuario: ${u})`,r.codigo,"Dáselo al mecánico: en la pantalla de acceso, que pulse «He olvidado mi contraseña». Vale 24 horas, se usa una sola vez y no se vuelve a mostrar.")}catch(x){alert(x.message)}}
 const chip=e=>`<span class="chip ${e}">${{pendiente:"Sin usar",caducada:"Caducada",usada:"Usada"}[e]}</span>`;
 async function pintaInv(){$("#inv").classList.toggle("hide",!API);if(!API)return;let l=[];try{l=await api("equipo/invitaciones")}catch(x){}
  $("#inv").innerHTML=`<h2 style="font-size:1.2rem">Invitaciones</h2>`+(l.length?l.map(i=>`<div class="mec-f"><div><b>${esc(i.nombre||"Sin nombre")}</b> ${chip(i.estado)}<div class="mute">${i.estado=="usada"?"Cuenta creada: "+esc(i.usuario):(i.estado=="pendiente"?"Caduca el ":"Caducó el ")+new Date(i.exp).toLocaleDateString("es-ES")}</div></div><div>${i.estado=="usada"?"":(i.estado=="pendiente"?`<button class="btn sec" onclick="invAccion('${i.id}','anular')">Anular</button> `:"")+`<button class="btn sec" onclick="invAccion('${i.id}','regenerar')">Regenerar</button>`}</div></div>`).join(""):'<p class="mute">No hay invitaciones. Genera un código arriba.</p>')}
 async function invAccion(id,a){try{if(a=="anular"&&!confirm("¿Anular esta invitación? El código dejará de funcionar."))return;const r=await api(`equipo/invitaciones/${id}/${a}`,"POST",{});
- if(r.codigo){$("#q-cod").textContent=r.codigo;$("#q-res").classList.remove("hide");scrollTo(0,0)}await pintaInv()}catch(x){alert(x.message)}}
+ if(r.codigo)muestraCodigo("Código de alta (nuevo)",r.codigo,HINT_ALTA);await pintaInv()}catch(x){alert(x.message)}}
 async function libre(u,v){await api("equipo/"+u,"PATCH",{libre:v});equipo()}
 async function baja(u,reactivar){const n=D.ordenes.filter(o=>o.mec==u&&o.estado!="Entregado").length;
  if(!reactivar&&!confirm(`¿Dar de baja a ${u}?`+(n?` Sus ${n} vehículos pasarán a "Sin asignar" para que los reasignes.`:"")))return;
- await api("equipo/"+u,"PATCH",{activo:reactivar});if(!reactivar)for(const o of D.ordenes)if(o.mec==u){o.mec="";await save(o,["mec"])}equipo()}
+ await api("equipo/"+u,"PATCH",{activo:reactivar});let fallos=0;
+ if(!reactivar)for(const o of D.ordenes)if(o.mec==u&&await save(o,["mec"],{mec:""},true)!=1)fallos++;
+ if(fallos)alert(`${fallos} vehículo(s) no se han podido pasar a «Sin asignar» porque alguien los ha modificado a la vez. Reasígnalos desde el tablero.`);equipo()}
 
+
+/* COPIA DE SEGURIDAD: Excel (CSV) con las órdenes, o ZIP completo (datos + CSV + fotos) armado aquí en el navegador */
+const hoyISO=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Madrid"});
+const CRC=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+const crc32=u=>{let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CRC[(c^u[i])&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0};
+function zip(files){ // ZIP sin compresión (las fotos ya son JPEG); nombres en UTF-8
+ const enc=new TextEncoder(),d=new Date(),hora=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1),fecha=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate(),partes=[],cd=[];let off=0;
+ for(const f of files){const n=enc.encode(f.name),crc=crc32(f.data),lh=new DataView(new ArrayBuffer(30)),ch=new DataView(new ArrayBuffer(46));
+  lh.setUint32(0,0x04034b50,true);lh.setUint16(4,20,true);lh.setUint16(6,0x0800,true);lh.setUint16(10,hora,true);lh.setUint16(12,fecha,true);lh.setUint32(14,crc,true);lh.setUint32(18,f.data.length,true);lh.setUint32(22,f.data.length,true);lh.setUint16(26,n.length,true);
+  ch.setUint32(0,0x02014b50,true);ch.setUint16(4,20,true);ch.setUint16(6,20,true);ch.setUint16(8,0x0800,true);ch.setUint16(12,hora,true);ch.setUint16(14,fecha,true);ch.setUint32(16,crc,true);ch.setUint32(20,f.data.length,true);ch.setUint32(24,f.data.length,true);ch.setUint16(28,n.length,true);ch.setUint32(42,off,true);
+  partes.push(lh,n,f.data);cd.push(ch,n);off+=30+n.length+f.data.length}
+ const tam=cd.reduce((s,x)=>s+(x.byteLength??x.length),0),fin=new DataView(new ArrayBuffer(22));
+ fin.setUint32(0,0x06054b50,true);fin.setUint16(8,files.length,true);fin.setUint16(10,files.length,true);fin.setUint32(12,tam,true);fin.setUint32(16,off,true);
+ return new Blob([...partes,...cd,fin],{type:"application/zip"})}
+// "blob" = bytes tal cual (imprescindible para el CSV: text() descarta el BOM y Excel rompería los acentos)
+async function bajar(ruta,tipo){const r=await fetch(ruta);if(!r.ok){let m="Algo ha fallado ("+r.status+")";try{m=(await r.json()).error||m}catch(x){}throw new Error(m)}return tipo=="blob"?new Uint8Array(await r.arrayBuffer()):r.text()}
+function guardaArchivo(blob,nombre){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=nombre;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),6e4)}
+const bkEst=(t,ok)=>{const e=$("#bk-est");if(e){e.textContent=t;e.style.color=ok?"var(--ok)":""}},bkBtn=d=>document.querySelectorAll(".bk-b").forEach(b=>b.disabled=d);
+async function copiaCsv(){bkBtn(true);bkEst("Preparando el Excel…");try{guardaArchivo(new Blob([await bajar("/api/export?formato=csv","blob")],{type:"text/csv;charset=utf-8"}),`taller-ordenes-${hoyISO()}.csv`);bkEst("Excel descargado.",1)}catch(x){bkEst("No se ha podido: "+x.message)}bkBtn(false)}
+async function copiaZip(){bkBtn(true);const enc=new TextEncoder();
+ try{bkEst("Descargando los datos…");const json=await bajar("/api/export?formato=json"),csv=await bajar("/api/export?formato=csv","blob"),ids=JSON.parse(json).fotos||[];
+  const files=[{name:"datos.json",data:enc.encode(json)},{name:"ordenes.csv",data:csv}],falta=[];let hechas=0,i=0;
+  const hilo=async()=>{while(i<ids.length){const id=ids[i++];try{files.push({name:`fotos/${id}.jpg`,data:await bajar("/api/fotos/"+id,"blob")})}catch(x){falta.push(id)}bkEst(`Descargando fotos… ${++hechas} de ${ids.length}`)}};
+  await Promise.all([hilo(),hilo(),hilo(),hilo()]);
+  files.push({name:"LEEME.txt",data:enc.encode(`Copia de seguridad del taller · ${hoyISO()}\r\n\r\ndatos.json  → todas las órdenes, el equipo (sin contraseñas) y los ajustes. Cada orden indica sus fotos por identificador.\r\nordenes.csv → una fila por orden, para abrir con Excel.\r\nfotos/      → una imagen .jpg por foto; el nombre del archivo es el identificador que aparece en datos.json.\r\n`+(falta.length?`\r\nNo se pudieron descargar ${falta.length} fotos: ${falta.join(", ")}\r\n`:""))});
+  bkEst("Empaquetando…");guardaArchivo(zip(files),`taller-copia-${hoyISO()}.zip`);
+  try{localStorage.setItem("ultimaCopia",new Date().toISOString())}catch(x){}
+  bkEst(`Copia descargada: ${JSON.parse(json).ordenes.length} órdenes y ${ids.length-falta.length} fotos.`+(falta.length?` ${falta.length} fotos no se pudieron bajar.`:""),!falta.length);
+  const u=$("#bk-ult");if(u)u.textContent=ultimaCopia()}
+ catch(x){bkEst("No se ha podido hacer la copia: "+x.message)}bkBtn(false)}
+const ultimaCopia=()=>{try{const t=localStorage.getItem("ultimaCopia");return t?"Última copia completa descargada desde este navegador: "+fechaHora(t):"Aún no has descargado ninguna copia completa desde este navegador."}catch(x){return""}};
+const copiaHtml=()=>`<div class="card" style="margin-top:14px"><h2 style="font-size:1.2rem">Copia de seguridad</h2>${!API?'<p class="mute">Sin conexión con el servidor: modo demostración.</p>':`<p class="mute">Descarga tus datos y guárdalos fuera de esta aplicación (tu ordenador, un disco o tu nube). Lo recomendable es una copia completa cada semana.</p>
+ <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn bk-b" onclick="copiaZip()">Copia completa (datos + fotos)</button><button class="btn sec bk-b" onclick="copiaCsv()">Órdenes para Excel</button></div>
+ <p id="bk-est" class="mute" role="status" aria-live="polite" style="margin:10px 0 0"></p><p id="bk-ult" class="mute" style="margin:4px 0 0;font-size:.88rem">${ultimaCopia()}</p>`}</div>`;
 /* 6. AJUSTES */
 async function ajustes(){await cargar();
  $("#v").innerHTML=`<div class="card"><h1>Ajustes</h1>${sw(D.vb,"setVBGlobal(this.checked)","El admin da el visto bueno a cada presupuesto")}<p class="mute">Si lo activas, los mecánicos piden visto bueno salvo los que tengan permiso en Equipo.</p>
  <h2 style="font-size:1.2rem;margin-top:22px">Motivos de visita</h2><div class="chips" style="margin-top:8px">${D.motivos.map((m,i)=>`<label>${esc(m)} <button class="btn sec" style="padding:0 8px" onclick="quitarMot(${i})" aria-label="Quitar ${esc(m)}">×</button></label>`).join("")}</div>
- <div style="display:flex;gap:8px;margin-top:12px"><input id="m-nuevo" placeholder="Nuevo motivo"><button class="btn" onclick="addMot()">Añadir</button></div></div>`}
+ <div style="display:flex;gap:8px;margin-top:12px"><input id="m-nuevo" placeholder="Nuevo motivo"><button class="btn" onclick="addMot()">Añadir</button></div></div>${copiaHtml()}`}
 async function guardarAj(){if(API)await api("ajustes","PUT",{vistoBuenoActivo:D.vb,motivos:D.motivos})}
 async function setVBGlobal(v){D.vb=v;await guardarAj()}
 async function addMot(){const m=$("#m-nuevo").value.trim();if(!m)return;D.motivos.push(m);await guardarAj();ajustes()}
 async function quitarMot(i){D.motivos.splice(i,1);await guardarAj();ajustes()}
 cargar().then(pintar);
-setInterval(async()=>{if(!API||document.hidden||$("#fd").open)return;try{D.ordenes=await api("ordenes");["tablero","aprobar"].includes(vista)?pintar():nav()}catch(x){}},30000);
+setInterval(async()=>{if(!API||document.hidden||$("#fd").open)return;try{D.ordenes=await api("ordenes");vista=="buscar"?(nav(),resultados()):["tablero","aprobar"].includes(vista)?pintar():nav()}catch(x){}},30000);
 </script></body></html>
