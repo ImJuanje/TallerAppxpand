@@ -53,6 +53,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1p
 .vis{display:flex;gap:4px 10px;flex-wrap:wrap;align-items:center;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:9px 2px;cursor:pointer;font:inherit;color:inherit}.vis:hover{background:#f3f6fb}
 .gr{margin-top:14px}.gr .cab{margin-bottom:6px}.sm{padding:4px 10px;font-size:.85rem}.btn:disabled{opacity:.6;cursor:wait}
 .cl{border:1px solid var(--line);border-radius:10px;padding:14px}.enl{margin-top:12px;background:var(--paper);padding:12px;border-radius:8px}.enl input{width:100%}.btn[disabled]{opacity:.5;cursor:not-allowed}
+.fa-f{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
 </style></head>
 <body>
 <header class="top"><span class="brand">Taller <b>AppXpand</b></span><nav id="nav"></nav>
@@ -77,11 +78,11 @@ const mots=o=>[...o.mot,...(o.otro?[o.otro]:[])].join(", ");
 const eur=x=>x.toLocaleString("es-ES",{style:"currency",currency:"EUR"}),tot=o=>o.pres.reduce((s,l)=>s+ +l.i,0);
 let vista="tablero",F="*",cur=null,fotoTmp="";
 const ir=v=>{vista=v;pintar()};
-const NAVS=[["tablero","Tablero"],["buscar","Buscar"],["aprobar","Por aprobar"],["entrada","Nueva entrada"],["equipo","Equipo"],["ajustes","Ajustes"]];
+const NAVS=[["tablero","Tablero"],["buscar","Buscar"],["aprobar","Por aprobar"],["facturas","Facturas"],["entrada","Nueva entrada"],["equipo","Equipo"],["ajustes","Ajustes"]];
 const pend=()=>D.ordenes.filter(o=>o.vb==="pendiente"&&o.estado!=="Entregado");
 function nav(){const n=pend().length;document.title=(n?`(${n}) `:"")+"Panel · Taller AppXpand";
  $("#nav").innerHTML=NAVS.map(([k,t])=>`<button class="${vista==k?"on":""}" onclick="ir('${k}')">${t}${k=="aprobar"&&n?` <span class="bdg">${n}</span>`:""}</button>`).join("")}
-function pintar(){nav();({tablero,buscar,aprobar,entrada,equipo,ajustes})[vista]()}
+function pintar(){nav();({tablero,buscar,aprobar,facturas,entrada,equipo,ajustes})[vista]()}
 
 /* 1. TABLERO */
 /* Respuesta del cliente al presupuesto (la IP y el navegador solo les llegan al admin) */
@@ -165,8 +166,9 @@ function ficha(){const o=cur,a=adm(),libre=a||yo().libre||!D.vb,hist=D.ordenes.f
  <div class="grid" style="grid-template-columns:2fr 1.2fr 1fr auto;align-items:end;gap:8px"><div><label>Concepto</label><input id="p-c"></div><div><label>Tipo</label><select id="p-t"><option>Mano de obra</option><option>Pieza</option></select></div><div><label>Importe (€)</label><input id="p-i" type="number" min="0" step="0.01"></div><button class="btn" onclick="linea()">Añadir</button></div>
  <div class="tot">Base ${eur(tot(o))} · IVA 21 % ${eur(tot(o)*.21)} · <b>Total ${eur(tot(o)*1.21)}</b></div><p style="text-align:right">${vb}</p>
  <h2>Cliente</h2><div id="cl-blk"></div>
+ <h2>Facturación</h2><div id="fa-blk"></div>
  <h2>Historial de este coche</h2>${hist.map(x=>`<div class="hist"><b>${esc(x.fecha)}</b> · ${esc(mots(x))} · ${esc(x.estado)} · ${eur(tot(x)*1.21)}<div class="mute">${esc(x.notas)}</div></div>`).join("")||'<p class="mute">Primera visita registrada.</p>'}${o.mod?`<p class="mute" style="font-size:.82rem;margin-top:18px">Última modificación: ${fechaHora(o.mod)} · ${esc(D.equipo.find(x=>x.u==o.modPor)?.n||o.modPor)}</p>`:""}</div>`;
- if(!$("#fd").open)$("#fd").showModal();pintaCliente()}
+ if(!$("#fd").open)$("#fd").showModal();pintaCliente();pintaFactura()}
 async function fotos(i){for(const f of i.files){try{const id=await subir(await comprime(f));cur.fotos.push(id)}catch(x){alert(x.message)}}await save(cur,["fotos"]);ficha()}
 function linea(){const c=$("#p-c").value.trim(),i=$("#p-i").value;if(!c||i==="")return;edita(["pres","vb"],o=>{o.pres.push({c,t:$("#p-t").value,i:+i});o.vb=""})}
 function quitar(i){edita(["pres","vb"],o=>{o.pres.splice(i,1);o.vb=""})}
@@ -202,6 +204,44 @@ async function genEnlace(hay){if(hay&&!confirm("Generar uno nuevo anula el enlac
 async function anulaEnlace(){if(!confirm("¿Anular el enlace? El cliente dejará de poder verlo."))return;try{await api(`ordenes/${cur.id}/enlace`,"POST",{accion:"revocar"});ENL=null;pintaCliente()}catch(x){alert(x.message)}}
 function copiaEnlace(){const i=$("#enl-url");i.select();(navigator.clipboard?navigator.clipboard.writeText(i.value):Promise.reject()).catch(()=>document.execCommand("copy"))}
 $("#fd").addEventListener("close",()=>{ENL=null});
+/* FACTURACIÓN (solo admin): emitir desde el coche, descargar el PDF y rectificar. Las facturas no se editan ni se borran. */
+let FACT=null,FF={anio:0,tri:0};
+const descarga=n=>{const a=document.createElement("a");a.href=`/api/facturas/${n}/pdf`;a.download="";document.body.append(a);a.click();a.remove()};
+async function pintaFactura(){const o=cur,b=$("#fa-blk");if(!b)return;
+ if(typeof API!=="undefined"&&!API){b.innerHTML='<p class="mute">Sin conexión con el servidor: modo demostración.</p>';return}
+ let r={actual:"",facturas:[]};try{r=await api(`facturas?orden=${o.id}`)}catch(x){}
+ if(cur!==o||!$("#fa-blk"))return;
+ const apr=[...(o.presV||[])].reverse().find(v=>v.dec&&v.dec.resultado==="aprobado"),lineas=apr?apr.lineas:(o.vb=="ok"&&o.pres.length?o.pres:null);
+ const origen=apr?`versión ${apr.n} aprobada por el cliente`:"presupuesto cerrado por el taller";
+ const bs=lineas?lineas.reduce((a,l)=>a+Math.round(l.i*100),0):0,total=(bs+Math.round(bs*21/100))/100;
+ const hist=r.facturas.map(f=>`<div class="fa-f"><div><b>${f.tipo=="R"?"Rectificativa ":"Factura "}${esc(f.numero)}</b> · ${fechaC(f.fecha)} · ${eur(f.total)}${f.simplificada?' <span class="mute">(simplificada)</span>':""}${f.rectificadaPor?` <span class="vbp">Rectificada por ${esc(f.rectificadaPor)}</span>`:""}${f.rectDe?` <span class="mute">anula la ${esc(f.rectDe)}</span>`:""}</div><div><a class="btn sec" style="text-decoration:none" href="/api/facturas/${esc(f.numero)}/pdf" download>Descargar PDF</a>${f.tipo!="R"&&!f.rectificadaPor?` <button class="btn sec" onclick="rectificar('${esc(f.numero)}')">Rectificar</button>`:""}</div></div>`).join("");
+ const ult=r.facturas.at(-1)||{},f=FACT&&FACT.id==o.id?FACT:null;
+ const acc=r.actual?"":!lineas?'<p class="mute" style="margin:10px 0 0">Para facturar, el presupuesto tiene que estar aprobado.</p>':f?`<div class="enl"><p style="margin:0 0 6px">Se facturará: <b>${esc(origen)}</b> · ${eur(total)} (IVA incluido).</p>
+ <div class="grid"><div><label>Nombre del cliente</label><input id="fc-nombre" value="${esc(f.nombre)}"></div><div><label>NIF del cliente</label><input id="fc-nif" value="${esc(f.nif)}" style="text-transform:uppercase"></div>
+ <div style="grid-column:1/-1"><label>Dirección</label><input id="fc-dir" value="${esc(f.dir)}"></div><div><label>Código postal</label><input id="fc-cp" maxlength="5" value="${esc(f.cp)}"></div><div><label>Municipio</label><input id="fc-ciudad" value="${esc(f.ciudad)}"></div></div>
+ <p class="mute" style="font-size:.85rem;margin:8px 0">Si es una empresa o un autónomo, pon su NIF y su dirección. A un particular se le puede emitir sin NIF mientras no pase de 400 € con IVA. Una factura emitida no se puede editar ni borrar: si hay un error se hace una rectificativa.</p>
+ <button class="btn" onclick="emiteFactura()">Emitir factura</button> <button class="btn sec" onclick="FACT=null;pintaFactura()">Cancelar</button><div id="fc-msg" style="margin-top:8px"></div></div>`:`<button class="btn" style="margin-top:10px" onclick="abreFactura('${esc(ult.cliente?ult.cliente.nif:"")}')">Emitir factura (${eur(total)})</button>`;
+ $("#fa-blk").innerHTML=(hist||'<p class="mute" style="margin:0">Aún no hay facturas de este coche.</p>')+acc}
+const abreFactura=nif=>{FACT={id:cur.id,nombre:cur.cli||"",nif:nif||"",dir:"",cp:"",ciudad:""};pintaFactura()};
+async function emiteFactura(){const o=cur,v=i=>$("#fc-"+i).value,msg=$("#fc-msg");
+ try{const f=await api("facturas","POST",{orden:o.id,cliente:{nombre:v("nombre"),nif:v("nif"),dir:v("dir"),cp:v("cp"),ciudad:v("ciudad")}});FACT=null;await pintaFactura();descarga(f.numero)}
+ catch(x){msg.textContent=x.message;msg.style.color="#b3261e"}}
+async function rectificar(n){const m=prompt("Motivo de la rectificación (obligatorio):");if(!m)return;
+ if(!confirm(`Se emitirá una factura rectificativa que anula por completo la ${n}. Después podrás emitir la correcta. ¿Continuar?`))return;
+ try{await api(`facturas/${n}/rectificar`,"POST",{motivo:m});if(vista=="facturas")facturas();else pintaFactura()}catch(x){alert(x.message)}}
+async function facturas(){let r={facturas:[],totales:{n:0,base:0,iva:0,total:0},anios:[]};
+ try{r=await api(`facturas?anio=${FF.anio}&trimestre=${FF.tri}`)}catch(x){}
+ const anios=[...new Set([...(r.anios||[]),new Date().getFullYear()])].sort((a,b)=>b-a);
+ $("#v").innerHTML=`<div class="card" style="max-width:960px"><h1>Facturas</h1>
+ <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div><label>Año</label><select onchange="FF.anio=+this.value;facturas()" style="width:auto"><option value="0">Todos</option>${anios.map(a=>`<option value="${a}" ${FF.anio==a?"selected":""}>${a}</option>`).join("")}</select></div>
+ <div><label>Trimestre</label><select onchange="FF.tri=+this.value;facturas()" style="width:auto"><option value="0">Todos</option>${[1,2,3,4].map(q=>`<option value="${q}" ${FF.tri==q?"selected":""}>T${q}</option>`).join("")}</select></div>
+ <button class="btn sec" onclick="verificaFact()">Comprobar integridad</button></div><div id="fv-msg" class="mute" style="margin:10px 0"></div>
+ <div style="overflow-x:auto"><table><tr><th>Nº</th><th>Fecha</th><th>Cliente</th><th>Matrícula</th><th>Base</th><th>IVA</th><th>Total</th><th></th></tr>${r.facturas.length?r.facturas.map(f=>`<tr><td><b>${esc(f.numero)}</b>${f.rectificadaPor?`<div class="vbp">Rectificada (${esc(f.rectificadaPor)})</div>`:""}${f.rectDe?`<div class="mute">anula la ${esc(f.rectDe)}</div>`:""}${f.simplificada?'<div class="mute">simplificada</div>':""}</td><td>${fechaC(f.fecha)}</td><td>${esc(f.cliente.nombre)}${f.cliente.nif?`<div class="mute">${esc(f.cliente.nif)}</div>`:""}</td><td>${esc((f.vehiculo||{}).mat)}</td><td>${eur(f.base)}</td><td>${eur(f.iva)}</td><td><b>${eur(f.total)}</b></td><td style="white-space:nowrap"><a class="btn sec" style="text-decoration:none" href="/api/facturas/${esc(f.numero)}/pdf" download>Descargar PDF</a>${f.tipo!="R"&&!f.rectificadaPor?` <button class="btn sec" onclick="rectificar('${esc(f.numero)}')">Rectificar</button>`:""}</td></tr>`).join(""):'<tr><td colspan="8" class="mute">No hay facturas en este periodo.</td></tr>'}</table></div>
+ <p style="text-align:right;margin:12px 0 0">${r.totales.n} documentos · Base ${eur(r.totales.base)} · IVA ${eur(r.totales.iva)} · <b>Total ${eur(r.totales.total)}</b></p>
+ <p class="mute" style="font-size:.85rem;margin:8px 0 0">Las rectificativas restan. Para pasar el trimestre al gestor, filtra y descarga los PDF.</p></div>`}
+async function verificaFact(){const m=$("#fv-msg");try{const r=await api("facturas/verificar");
+ m.innerHTML=r.ok?`<span class="ok">Todo correcto: ${r.total} documentos, numeración sin saltos y huellas encadenadas.</span>`:`<span style="color:#b3261e">${r.problemas.map(esc).join("<br>")}</span>`}catch(x){m.textContent=x.message}}
+$("#fd").addEventListener("close",()=>{FACT=null});
 $("#fd").addEventListener("close",pintar);
 /* API (si no hay servidor, la página sigue en modo demostración) */
 let EQ=[],API=false;
@@ -290,10 +330,28 @@ const copiaHtml=()=>`<div class="card" style="margin-top:14px"><h2 style="font-s
  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn bk-b" onclick="copiaZip()">Copia completa (datos + fotos)</button><button class="btn sec bk-b" onclick="copiaCsv()">Órdenes para Excel</button></div>
  <p id="bk-est" class="mute" role="status" aria-live="polite" style="margin:10px 0 0"></p><p id="bk-ult" class="mute" style="margin:4px 0 0;font-size:.88rem">${ultimaCopia()}</p>`}</div>`;
 /* 6. AJUSTES */
-async function ajustes(){await cargar();
+async function ajustes(){await cargar();await cargarFiscal();
  $("#v").innerHTML=`<div class="card"><h1>Ajustes</h1>${sw(D.vb,"setVBGlobal(this.checked)","El admin da el visto bueno a cada presupuesto")}<p class="mute">Si lo activas, los mecánicos piden visto bueno salvo los que tengan permiso en Equipo.</p>
  <h2 style="font-size:1.2rem;margin-top:22px">Motivos de visita</h2><div class="chips" style="margin-top:8px">${D.motivos.map((m,i)=>`<label>${esc(m)} <button class="btn sec" style="padding:0 8px" onclick="quitarMot(${i})" aria-label="Quitar ${esc(m)}">×</button></label>`).join("")}</div>
- <div style="display:flex;gap:8px;margin-top:12px"><input id="m-nuevo" placeholder="Nuevo motivo"><button class="btn" onclick="addMot()">Añadir</button></div></div>${copiaHtml()}`}
+ <div style="display:flex;gap:8px;margin-top:12px"><input id="m-nuevo" placeholder="Nuevo motivo"><button class="btn" onclick="addMot()">Añadir</button></div></div><div class="card" id="fiscal" style="margin-top:14px">${fiscalInner()}</div>${copiaHtml()}`}
+/* DATOS FISCALES DEL TALLER (necesarios para emitir facturas) */
+let FISC={},FISCOK=false;
+async function cargarFiscal(){if(!API)return;try{const r=await api("fiscal");FISC=r.fiscal||{};FISCOK=r.completo}catch(x){}}
+const fiscalInner=()=>!API?'<p class="mute">Sin conexión con el servidor: modo demostración.</p>':`<h2 style="font-size:1.2rem">Datos fiscales del taller</h2>
+ <p class="mute" style="margin:6px 0 12px">Aparecen en las facturas. Sin ellos no se puede emitir ninguna. ${FISCOK?'<b class="ok">Completos</b>':'<b style="color:#b3261e">Incompletos</b>'}</p>
+ <div class="grid"><div><label>Razón social o nombre</label><input id="f-razon" value="${esc(FISC.razon)}"></div><div><label>NIF / CIF</label><input id="f-nif" value="${esc(FISC.nif)}" style="text-transform:uppercase"></div>
+ <div style="grid-column:1/-1"><label>Dirección</label><input id="f-dir" value="${esc(FISC.dir)}"></div>
+ <div><label>Código postal</label><input id="f-cp" value="${esc(FISC.cp)}" inputmode="numeric" maxlength="5"></div><div><label>Municipio</label><input id="f-ciudad" value="${esc(FISC.ciudad)}"></div><div><label>Provincia</label><input id="f-provincia" value="${esc(FISC.provincia)}"></div></div>
+ <label>Logo (opcional)</label><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${FISC.logo?`<img src="${FISC.logo}" alt="Logo" style="max-height:48px;max-width:160px">`:""}<input type="file" accept="image/png,image/jpeg" onchange="subeLogo(this)" style="width:auto">${FISC.logo?'<button class="btn sec" onclick="quitaLogo()">Quitar logo</button>':""}</div>
+ <p style="margin-top:16px"><button class="btn" onclick="guardaFiscal()">Guardar datos fiscales</button></p><div id="f-msg" class="mute"></div>`;
+const pintaFiscal=()=>{$("#fiscal").innerHTML=fiscalInner()};
+const leeFiscal=()=>{for(const k of ["razon","nif","dir","cp","ciudad","provincia"])FISC[k]=$("#f-"+k).value};
+async function guardaFiscal(){leeFiscal();try{const r=await api("fiscal","PUT",FISC);FISC=r.fiscal;FISCOK=r.completo;pintaFiscal();$("#f-msg").textContent="Guardado."}catch(x){$("#f-msg").textContent=x.message;$("#f-msg").style.color="#b3261e"}}
+async function subeLogo(i){const f=i.files[0];if(!f)return;try{leeFiscal();const b=await createImageBitmap(f),k=Math.min(1,400/Math.max(b.width,b.height)),c=document.createElement("canvas");c.width=Math.round(b.width*k);c.height=Math.round(b.height*k);
+ const x=c.getContext("2d");x.drawImage(b,0,0,c.width,c.height);let d=c.toDataURL("image/png");
+ if(d.length>270000){x.globalCompositeOperation="destination-over";x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);d=c.toDataURL("image/jpeg",.8)}
+ FISC.logo=d;pintaFiscal()}catch(e){alert("No se ha podido leer la imagen")}}
+function quitaLogo(){leeFiscal();FISC.logo="";pintaFiscal()}
 async function guardarAj(){if(API)await api("ajustes","PUT",{vistoBuenoActivo:D.vb,motivos:D.motivos})}
 async function setVBGlobal(v){D.vb=v;await guardarAj()}
 async function addMot(){const m=$("#m-nuevo").value.trim();if(!m)return;D.motivos.push(m);await guardarAj();ajustes()}
